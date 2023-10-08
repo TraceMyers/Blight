@@ -4,6 +4,7 @@ const string = @import("../utils/string.zig");
 const readerf = @import("reader.zig");
 const types = @import("types.zig");
 const config = @import("config.zig");
+const filef = @import("../utils/file.zig");
 
 const LocalBuffer = @import("../utils/localbuffer.zig").LocalBuffer;
 const Image = types.Image;
@@ -59,7 +60,7 @@ fn readFooter(file: *std.fs.File, info: *TgaInfo, extents: *ExtentBuffer) !void 
     try file.seekTo(footer_begin);
     info.footer = try file.reader().readStruct(TgaFooter);
 
-    if (string.same(info.footer.?.signature[0..], imagef.tga_identifier)) {
+    if (string.same(info.footer.?.signature[0..], filef.tga_identifier)) {
         info.file_type = TgaFileType.V2;
         extents.append(BlockExtent{ .begin=footer_begin, .end=info.file_sz });
     } else {
@@ -69,17 +70,18 @@ fn readFooter(file: *std.fs.File, info: *TgaInfo, extents: *ExtentBuffer) !void 
 }
 
 fn readHeader(file: *std.fs.File, info: *TgaInfo, extents: *ExtentBuffer) bool {
-    try validateAndAddExtent(extents, info, 0, tga_header_sz);
+    validateAndAddExtent(extents, info, 0, tga_header_sz) catch return false;
     // reading three structs rather than one so we're not straddling boundaries on any of the data.
-    try file.seekTo(0);
+    file.seekTo(0) catch return false;
     info.header.info = file.reader().readStruct(TgaHeaderInfo) catch return false;
     info.header.colormap_spec = file.reader().readStruct(TgaColorMapSpec) catch return false;
     // colormap_spec has 1 byte padding
-    try file.seekTo(tga_image_spec_offset);
+    file.seekTo(tga_image_spec_offset) catch return false;
     info.header.image_spec = file.reader().readStruct(TgaImageSpec) catch return false;
     if (!typeSupported(info.header.info.image_type)) {
         return false;
     }
+    return true;
 }
 
 fn readExtensionData(file: *std.fs.File, info: *TgaInfo, allocator: std.mem.Allocator, extents: *ExtentBuffer) !void {

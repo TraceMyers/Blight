@@ -45,7 +45,7 @@ pub fn load(
     var image = Image{};
     errdefer image.clear();
 
-    var file_format = if (format == .Infer) try filef.inferFormat(&file, file_name) else format;
+    var file_format = if (format == .Infer) try filef.inferImageFormat(&file, file_name) else format;
     if (!options.isInputFormatAllowed(file_format)) {
         return ImageError.InputFormatDisallowed;
     }
@@ -64,7 +64,7 @@ pub fn save(
     var t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("saveImage", 0)) else null;
     defer if (config.run_scope_timers) t.stop();
 
-    const file_format = if (format == .Infer) try filef.inferFormatFromExtension(file_name) else format;
+    const file_format = if (format == .Infer) try filef.inferImageFormatFromExtension(file_name) else format;
     if (file_format == .Infer) {
         return ImageError.UnableToInferFormat;
     }
@@ -173,24 +173,28 @@ fn loadIntersitial(
     allocator: std.mem.Allocator, 
     options: *const types.ImageLoadOptions,
     file_format: ImageFormat
-) !void {
+) ImageError!void {
     switch (file_format) {
-        .Bmp => if (comptime config.disable_load_bmp)
-            return ImageError.FormatDisabled
-        else
-            try bmp.load(&file, &image, allocator, options),
-        .Jpg => if (comptime config.disable_load_jpg)
-            return ImageError.FormatDisabled
-        else
-            try jpg.load(&file, &image, allocator, options),
-        .Png => if (comptime config.disable_load_png)
-            return ImageError.FormatDisabled
-        else
-            try bmp.load(&file, &image, allocator, options),
-        .Tga => if (comptime config.disable_load_tga)
-            return ImageError.FormatDisabled
-        else
-            try tga.load(&file, &image, allocator, options),
+        .Bmp => 
+            if (comptime config.disable_load_bmp)
+                return ImageError.FormatDisabled
+            else
+                bmp.load(file, image, allocator, options) catch return ImageError.FailedRedirectedLoad,
+        .Jpg => 
+            if (comptime config.disable_load_jpg)
+                return ImageError.FormatDisabled
+            else
+                jpg.load(file, image, allocator, options) catch return ImageError.FailedRedirectedLoad,
+        .Png => 
+            if (comptime config.disable_load_png)
+                return ImageError.FormatDisabled
+            else
+                bmp.load(file, image, allocator, options) catch return ImageError.FailedRedirectedLoad,
+        .Tga => 
+            if (comptime config.disable_load_tga)
+                return ImageError.FormatDisabled
+            else
+                tga.load(file, image, allocator, options) catch return ImageError.FailedRedirectedLoad,
         else => unreachable,
     }
 }
@@ -273,6 +277,7 @@ pub const ImageError = error{
     UnableToInferFormat,
     InputFormatDisallowed,
     OutputFormatDisallowed,
+    FailedRedirectedLoad,
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

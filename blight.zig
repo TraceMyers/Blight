@@ -8,6 +8,7 @@ pub const config = @import("src/image/config.zig");
 pub const reader = @import("src/image/reader.zig");
 pub const types = @import("src/image/types.zig");
 pub const time = @import("src/utils/time.zig");
+pub const file = @import("src/utils/file.zig");
 
 // useful types
 pub const RGBA32 = types.RGBA32;
@@ -28,3 +29,6 @@ pub const PixelContainer = types.PixelContainer;
 pub const Image = types.Image;
 pub const ImageLoadOptions = types.ImageLoadOptions;
 pub const ImageSaveOptions = types.ImageSaveOptions;
+pub const ImageFormat = file.ImageFormat;
+pub const ImageAlpha = image.ImageAlpha;
+pub const SaveAlpha = image.SaveAlpha;

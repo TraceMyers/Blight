@@ -4,17 +4,15 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary(.{
-        .name = "blight",
-        .root_source_file = .{ .path = "blight.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
+    _ = b.addModule(
+        "blight",
+        .{ .source_file = .{ .path = "blight.zig" },}
+    );
 
-    b.installArtifact(lib);
+    // b.installArtifact(lib);
 
     const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = .{ .path = "src/image/image.zig" },
         .target = target,
         .optimize = optimize,
     });

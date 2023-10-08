@@ -31,7 +31,7 @@ None
 
 ### Bmp Read
 #### Included:
-- all Windows versions (V1 through V5). OS/2 versions *may* load.
+- all versions still in circulation (Core, V1, V4, V5). OS/2 versions *may* load.
 - most common compression flavors (RGB, RLE8, RLE4, BITFIELDS, ALPHABITFIELDS) in sub-flavors (color table, true color, run-length encoded) in all pixel shapes and sizes from 1 to 32 bits
 - most common colorspaces (CalibratedRGB, WindowsColorSpace, sRGB)
 #### Missing:

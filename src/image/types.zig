@@ -1,5 +1,6 @@
 const std = @import("std");
 const imagef = @import("image.zig");
+const readerf = @import("reader.zig");
 
 // --- Image pixel types ---
 
@@ -8,6 +9,80 @@ pub const RGBA32 = extern struct {
     g: u8 = 0,
     b: u8 = 0,
     a: u8 = 0,
+
+    pub inline fn getR(self: *const RGBA32) u8 {
+        return self.r;
+    }
+
+    pub inline fn getG(self: *const RGBA32) u8 {
+        return self.g;
+    }
+
+    pub inline fn getB(self: *const RGBA32) u8 {
+        return self.b;
+    }
+
+    pub inline fn getA(self: *const RGBA32) u8 {
+        return self.a;
+    }
+
+    pub inline fn setR(self: *RGBA32, r: u8) void {
+        self.r = r;
+    }
+
+    pub inline fn setG(self: *RGBA32, g: u8) void {
+        self.g = g;
+    }
+
+    pub inline fn setB(self: *RGBA32, b: u8) void {
+        self.b = b;
+    }
+
+    pub inline fn setA(self: *RGBA32, a: u8) void {
+        self.a = a;
+    }
+
+    pub inline fn setFromRGB(self: *RGBA32, r: u8, g: u8, b: u8) void {
+        self.r = r;
+        self.g = g;
+        self.b = b;
+        self.a = 255;
+    }
+
+    pub inline fn setFromRGBA(self: *RGBA32, r: u8, g: u8, b: u8, a: u8) void {
+        self.r = r;
+        self.g = g;
+        self.b = b;
+        self.a = a;
+    }
+
+    pub inline fn setFromGrey(self: *RGBA32, r: anytype) void {
+        switch(@TypeOf(r)) {
+            u8 => self.setFromRGB(r, r, r),
+            u16 => {
+                const grey: u8 = @intCast(r >> 8);
+                self.setFromRGB(grey, grey, grey);
+            },
+            R8 => self.setFromRGB(r.r, r.r, r.r),
+            R16 => {
+                const grey: u8 = @intCast(r.r >> 8);
+                self.setFromRGB(grey, grey, grey);
+            },
+            else => unreachable,
+        }
+    }
+
+    // always clears alpha unless setting from RGBA32
+    pub inline fn setFromColor(self: *RGBA32, c: anytype) void {
+        switch(@TypeOf(c)) {
+            u15 => self.setFromRGB((c & 0x7c00) >> 7, (c & 0x03e0) >> 2, (c & 0x001f) << 3),
+            u16 => self.setFromRGB((c & 0xf800) >> 8, (c & 0x07e0) >> 2, (c & 0x001f) << 3),
+            u24, u32 => self.setFromRGB((c & 0xff0000) >> 16, (c & 0x00ff00) >> 8, (c & 0x0000ff)),
+            RGB16 => self.setFromRGB((c.c & 0xf800) >> 8, (c.c & 0x07e0) >> 2, (c.c & 0x001f) << 3),
+            RGBA32 => self.* = c,
+            else => unreachable,
+        }
+    }
 };
 
 // I was unable to get a packed struct with r:u5, g:u6, b:u5 components to work
@@ -40,14 +115,38 @@ pub const RGB16 = extern struct {
         self.c = (self.c & ~0x001f) | ((b & 0xf8) >> 3);
     }
 
-    pub inline fn setRGB(self: *RGB16, r: u8, g: u8, b: u8) void {
+    pub inline fn setFromRGB(self: *RGB16, r: u8, g: u8, b: u8) void {
         self.c = ((@as(u16, @intCast(r)) & 0xf8) << 8) 
             | ((@as(u16, @intCast(g)) & 0xfc) << 3) 
             | ((@as(u16, @intCast(b)) & 0xf8) >> 3);
     }
 
-    pub inline fn setRGBFromU16(self: *RGB16, r: u16, g: u16, b: u16) void {
-        self.c = (r & 0xf800) | ((g & 0xfc00) >> 5) | ((b & 0xf800) >> 11);
+    pub inline fn setFromRGBA(self: *RGB16, r: u8, g: u8, b: u8, a: u8) void {
+        _ = a;
+        self.setFromRGB(r, g, b);
+    }
+
+    pub inline fn setFromGrey(self: *RGB16, r: anytype) void {
+        switch(@TypeOf(r)) {
+            u8 => self.setFromRGB(r, r, r),
+            u16 => self.c = (r & 0xf800) | ((r & 0xfc00) >> 5) | ((r & 0xf800) >> 11),
+            R8 => self.setFromRGB(r.r, r.r, r.r),
+            R16 => self.r = (r.r & 0xf800) | ((r.r & 0xfc00) >> 5) | ((r.r & 0xf800) >> 11),
+            else => unreachable,
+        }
+    }
+
+    pub inline fn setFromColor(self: *RGB16, c: anytype) void {
+        switch(@TypeOf(c)) {
+            u15 => self.c = (@as(u16, @intCast(c & 0x7fc0)) << 1) | (c & 0x003f),
+            u16 => self.c = c,
+            u24, u32 => self.c = (@as(u16, @intCast((c & 0xf80000) >> 8)))
+                | (@as(u16, @intCast((c & 0x00fc00) >> 5)))
+                | (@as(u16, @intCast((c & 0x0000f8) >> 3))),
+            RGB16 => self.c = c.c,
+            RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            else => unreachable,
+        }
     }
 };
 
@@ -55,49 +154,168 @@ pub const RGB15 = extern struct {
     // r: 5, g: 5, b: 5
     c: u16, 
 
-    pub inline fn getR(self: *const RGB16) u8 {
+    pub inline fn getR(self: *const RGB15) u8 {
         return @intCast((self.c & 0x7c00) >> 8);
     }
 
-    pub inline fn getG(self: *const RGB16) u8 {
+    pub inline fn getG(self: *const RGB15) u8 {
         return @intCast((self.c & 0x03e0) >> 3);
     }
 
-    pub inline fn getB(self: *const RGB16) u8 {
+    pub inline fn getB(self: *const RGB15) u8 {
         return @intCast((self.c & 0x001f) << 3);
     }
 
-    pub inline fn setR(self: *RGB16, r: u8) void {
+    pub inline fn setR(self: *RGB15, r: u8) void {
         // 0xfc00 here to clear the most significant 6 bits even though we're only setting the 5 least significant of 
         // the 6 most significant
         self.c = (self.c & ~0xfc00) | ((r & 0xf8) << 7);
     } 
 
-    pub inline fn setG(self: *RGB16, g: u8) void {
+    pub inline fn setG(self: *RGB15, g: u8) void {
         self.c = (self.c & ~0x03e0) | ((g & 0xf8) << 3);
     }
 
-    pub inline fn setB(self: *RGB16, b: u8) void {
+    pub inline fn setB(self: *RGB15, b: u8) void {
         self.c = (self.c & ~0x001f) | ((b & 0xf8) >> 3);
     }
 
-    pub inline fn setRGB(self: *RGB16, r: u8, g: u8, b: u8) void {
+    pub inline fn setFromRGB(self: *RGB15, r: u8, g: u8, b: u8) void {
         self.c = ((@as(u16, @intCast(r)) & 0xf8) << 7) 
             | ((@as(u16, @intCast(g)) & 0xf8) << 3) 
             | ((@as(u16, @intCast(b)) & 0xf8) >> 3);
     }
 
-    pub inline fn setRGBFromU16(self: *RGB15, r: u16, g: u16, b: u16) void {
-        self.c = ((r & 0xf800) >> 1) | ((g & 0xf800) >> 6) | ((b & 0xf800) >> 11);
+    pub inline fn setFromRGBA(self: *RGB15, r: u8, g: u8, b: u8, a: u8) void {
+        _ = a;
+        self.setFromRGB(r, g, b);
+    }
+
+    pub inline fn setFromGrey(self: *RGB15, r: anytype) void {
+        switch(@TypeOf(r)) {
+            u8 => self.setFromRGB(r, r, r),
+            u16 => self.c = ((r & 0xf800) >> 1) | ((r & 0xfc00) >> 6) | ((r & 0xf800) >> 11),
+            R8 => self.setFromRGB(r.r, r.r, r.r),
+            R16 => self.c = ((r.r & 0xf800) >> 1) | ((r.r & 0xfc00) >> 6) | ((r.r & 0xf800) >> 11),
+            else => unreachable,
+        }
+    }
+
+    pub inline fn setFromColor(self: *RGB15, c: anytype) void {
+        switch(@TypeOf(c)) {
+            u15 => self.c = @as(u16, c),
+            u16 => self.c = ((c & 0xf8c0) >> 1) | (c & 0x003f),
+            u24, u32 => self.c = (@as(u16, @intCast((c & 0xf80000) >> 9)))
+                | (@as(u16, @intCast((c & 0x00f800) >> 6)))
+                | (@as(u16, @intCast((c & 0x0000f8) >> 3))),
+            RGB16 => self.c = ((c.c & 0xf8c0) >> 1) | (c.c & 0x003f),
+            RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            else => unreachable,
+        }
     }
 };
 
 pub const R8 = extern struct {
     r: u8 = 0,
+
+    pub inline fn getR(self: *const R8) u8 {
+        return self.r;
+    }
+
+    pub inline fn setR(self: *const R8, r: u8) void {
+        self.r = r;
+    }
+
+    pub inline fn setFromRGB(self: *R8, r: u8, g: u8, b: u8) void {
+        self.r = @as(u8, @intCast((@as(u16, @intCast(r)) + @as(u16, @intCast(g)) + @as(u16, @intCast(b))) >> 8));
+    }
+
+    pub inline fn setFromRGBA(self: *R8, r: u8, g: u8, b: u8, a: u8) void {
+        _ = a;
+        self.setFromRGB(r, g, b);
+    }
+
+    pub inline fn setFromGrey(self: *R8, r: anytype) void {
+        switch(@TypeOf(r)) {
+            u8 => self.r = r,
+            u16 => self.r = @as(u8, @intCast(r >> 8)),
+            R8 => self.* = r,
+            R16 => self.r = @as(u8, @intCast(r.r >> 8)),
+            else => unreachable,
+        }
+    }
+
+    pub inline fn setFromColor(self: *R8, c: anytype) void {
+        switch(@TypeOf(c)) {
+            u15 => self.r = 
+                (   @as(u8, @intCast((c & 0x7c00) >> 10))
+                    + @as(u8, @intCast((c & 0x03e0) >> 5))
+                    + @as(u8, @intCast(c & 0x001f))
+                ) * 3 - 8,
+            u16 => self.r = 
+                (   @as(u8, @intCast((c & 0xf800) >> 11))
+                    + @as(u8, @intCast((c & 0x07c0) >> 6))
+                    + @as(u8, @intCast(c & 0x001f))
+                ) * 3 - 8,
+            u24, u32 => self.r = @as(u8, @intCast(
+                (((c & 0xff0000) >> 16) + ((c & 0x00ff00) >> 8) + ((c & 0x0000ff))) >> 8
+            )),
+            RGB16 => self.r =
+                (   @as(u8, @intCast((c.c & 0xf800) >> 11))
+                    + @as(u8, @intCast((c.c & 0x07c0) >> 6))
+                    + @as(u8, @intCast(c.c & 0x001f))
+                ) * 3 - 8,
+            RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            else => unreachable,
+        }
+    }
 };
 
 pub const R16 = extern struct {
     r: u16 = 0,
+
+    pub inline fn getR(self: *const R16) u16 {
+        return self.r;
+    }
+
+    pub inline fn getRu8(self: *const R16) u8 {
+        return @intCast(self.r >> 8);
+    }
+
+    pub inline fn setR(self: *const R16, r: u8) void {
+        self.r = r;
+    }
+
+    pub inline fn setFromRGB(self: *R16, r: u8, g: u8, b: u8) void {
+        self.r = (@as(u16, @intCast(r)) + @as(u16, @intCast(g)) + @as(u16, @intCast(b))) * 85;
+    }
+
+    pub inline fn setFromRGBA(self: *R16, r: u8, g: u8, b: u8, a: u8) void {
+        _ = a;
+        self.setFromRGB(r, g, b);
+    }
+
+    pub inline fn setFromGrey(self: *R16, r: anytype) void {
+        switch(@TypeOf(r)) {
+            u8 => self.r = @as(u16, @intCast(r)) << 8,
+            u16 => self.r = r,
+            R8 => self.r = @as(u16, @intCast(r.r)) << 8,
+            R16 => self.* = r,
+            else => unreachable,
+        }
+    }
+
+    pub inline fn setFromColor(self: *R16, c: anytype) void {
+        switch(@TypeOf(c)) {
+            u15 => self.r = (((c & 0x7c00) >> 10) + ((c & 0x03e0) >> 5) + ((c & 0x001f))) * 705 + 8,
+            u16 => self.r = (((c & 0xf800) >> 11) + ((c & 0x07c) >> 6) + ((c & 0x001f))) * 705 + 8,
+            u24, u32 => self.setFromRGB((c & 0xff0000) >> 16, (c & 0x00ff00) >> 8, c & 0x0000ff),
+            RGB16 => self.r = (((c.c & 0xf800) >> 11) + ((c.c & 0x07c) >> 6) + ((c.c & 0x001f))) * 705 + 8,
+            RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            else => unreachable,
+        }
+    }
+
 };
 
 pub const R32 = extern struct {

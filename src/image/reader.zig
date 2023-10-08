@@ -216,7 +216,7 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
             for (0..out_row.len) |i| {
                 var in_pixel: InPixelIntType = undefined;
                 if (InPixelIntType == u24) {
-                    in_pixel = U24_RGBFromBytes(&in_row[row_byte]);
+                    in_pixel = u24RGBFromBytes(&in_row[row_byte]);
                 } else {
                     in_pixel = std.mem.readIntSliceLittle(InPixelIntType, in_row[row_byte..row_byte + color_byte_sz]);
                 }
@@ -263,148 +263,30 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
         }
 
         pub inline fn transferColor(self: *const ReaderType, in_pixel: InPixelType, out_pixel: *OutPixelType) void {
-            const transfer_supported = comptime blk: { break :blk transferSupported(); };
-            if (!transfer_supported) {
-                return;
-            }
-            if (OutPixelType == types.R8 or OutPixelType == types.R16) {
-                switch (InPixelTag) {
-                    .RGBA32 => {
-                        out_pixel.r = RGBAverage(in_pixel, @TypeOf(out_pixel.r));
-                    },
-                    .RGB16 => {
-                        const color = types.RGBA32{
-                            .r = in_pixel.getR(),
-                            .g = in_pixel.getG(),
-                            .b = in_pixel.getB(),
-                        };
-                        out_pixel.r = RGBAverage(color, @TypeOf(out_pixel.r));
-                    },
-                    .R8 => {
-                        if (OutPixelType == types.R8) {
-                            out_pixel.* = in_pixel;
-                        } else { // .R16
-                            out_pixel.r = @as(u16, @intCast(in_pixel.r)) << 8;
-                        }
-                    },
-                    .R16 => {
-                        if (OutPixelType == types.R8) {
-                            out_pixel.r = @intCast((in_pixel.r & 0xff00) >> 8);
-                        } else {
-                            out_pixel.* = in_pixel;
-                        }
-                    },
-                    .U32_RGBA, .U32_RGB, .U16_RGBA, .U24_RGB, .U16_RGB, .U16_RGB15 => {
-                        const color = types.RGBA32{
-                            .r = self.r_mask.extractComponentU8(in_pixel),
-                            .g = self.g_mask.extractComponentU8(in_pixel),
-                            .b = self.b_mask.extractComponentU8(in_pixel),
-                        };
-                        out_pixel.r = RGBAverage(color, @TypeOf(out_pixel.r));
-                    },
-                    .U16_R => {
-                        if (OutPixelType == types.R8) {
-                            out_pixel.r = @intCast((in_pixel & 0xff00) >> 8);
-                        } else {
-                            out_pixel.r = in_pixel;
-                        }
-                    },
-                    .U8_R => {
-                        if (OutPixelType == types.R8) {
-                            out_pixel.r = in_pixel;
-                        } else {
-                            out_pixel.r = @as(u16, @intCast(in_pixel)) << 8;
-                        }
-                    },
-                    else => {},
-                }
-            } else switch (InPixelTag) { // RGBA32 and RGB16
-                .RGBA32 => {
-                    if (OutPixelType == types.RGBA32) {
-                        out_pixel.* = in_pixel;
-                        return;
-                    } else {
-                        out_pixel.setRGB(in_pixel.r, in_pixel.g, in_pixel.b);
-                    }
+            switch (InPixelTag) { 
+                .RGBA32, .RGB16 => {
+                    out_pixel.setFromColor(in_pixel);
                 },
-                .RGB16 => {
-                    if (OutPixelType == types.RGBA32) {
-                        out_pixel.r = in_pixel.getR();
-                        out_pixel.g = in_pixel.getG();
-                        out_pixel.b = in_pixel.getB();
-                        out_pixel.a = 255;
-                    } else {
-                        out_pixel.* = in_pixel;
-                    }
-                },
-                .R8 => {
-                    if (OutPixelType == types.RGBA32) {
-                        out_pixel.r = in_pixel.r;
-                        out_pixel.g = out_pixel.r;
-                        out_pixel.b = out_pixel.r;
-                        out_pixel.a = 255;
-                    } else {
-                        out_pixel.setRGB(in_pixel.r, in_pixel.r, in_pixel.r);
-                    }
-                },
-                .R16 => {
-                    if (OutPixelType == types.RGBA32) {
-                        out_pixel.r = @intCast((in_pixel.r & 0xff00) >> 8);
-                        out_pixel.g = out_pixel.r;
-                        out_pixel.b = out_pixel.r;
-                        out_pixel.a = 255;
-                    } else {
-                        out_pixel.c = U16_RGBFromU16_R(in_pixel.r);
-                    }
+                .R8, .R16, .U16_R, .U8_R => {
+                    out_pixel.setFromGrey(in_pixel);
                 },
                 .U32_RGBA, .U16_RGBA => {
-                    if (OutPixelType == types.RGBA32) {
-                        out_pixel.r = self.r_mask.extractComponent(in_pixel);
-                        out_pixel.g = self.g_mask.extractComponent(in_pixel);
-                        out_pixel.b = self.b_mask.extractComponent(in_pixel);
-                        out_pixel.a = self.a_mask.extractComponent(in_pixel);
-                    } else {
-                        out_pixel.c = self.U16_RGBFromMaskedRGBA(in_pixel);
-                    }
+                    out_pixel.setFromRGBA(
+                        self.r_mask.extractComponentU8(in_pixel),
+                        self.g_mask.extractComponentU8(in_pixel),
+                        self.b_mask.extractComponentU8(in_pixel),
+                        self.a_mask.extractComponentU8(in_pixel),
+                    );
                 },
                 .U32_RGB, .U24_RGB, .U16_RGB, .U16_RGB15 => {
-                    if (OutPixelType == types.RGBA32) {
-                        out_pixel.r = self.r_mask.extractComponent(in_pixel);
-                        out_pixel.g = self.g_mask.extractComponent(in_pixel);
-                        out_pixel.b = self.b_mask.extractComponent(in_pixel);
-                        out_pixel.a = std.math.maxInt(@TypeOf(out_pixel.a));
-                    } else {
-                        out_pixel.c = self.U16_RGBFromMaskedRGBA(in_pixel);
-                    }
-                },
-                .U16_R => {
-                    if (OutPixelType == types.RGBA32) {
-                        out_pixel.r = @intCast((in_pixel & 0xff00) >> 8);
-                        out_pixel.g = out_pixel.r;
-                        out_pixel.b = out_pixel.r;
-                        out_pixel.a = std.math.maxInt(@TypeOf(out_pixel.a));
-                    } else {
-                        out_pixel.c = U16_RGBFromU16_R(in_pixel);
-                    }
-                },
-                .U8_R => {
-                    if (OutPixelType == types.RGBA32) {
-                        out_pixel.r = in_pixel;
-                        out_pixel.g = out_pixel.r;
-                        out_pixel.b = out_pixel.r;
-                        out_pixel.a = std.math.maxInt(@TypeOf(out_pixel.a));
-                    } else {
-                        out_pixel.setRGB(in_pixel, in_pixel, in_pixel);
-                    }
+                    out_pixel.setFromRGB(
+                        self.r_mask.extractComponentU8(in_pixel),
+                        self.g_mask.extractComponentU8(in_pixel),
+                        self.b_mask.extractComponentU8(in_pixel),
+                    );
                 },
                 else => {},
             }
-        }
-
-        inline fn U16_RGBFromMaskedRGBA(self: *const ReaderType, in_pixel: InPixelType) u16 {
-            return (@as(u16, @intCast(self.r_mask.extractComponent(in_pixel))) << 11)
-                | (@as(u16, @intCast(self.g_mask.extractComponent(in_pixel))) << 5)
-                | self.b_mask.extractComponent(in_pixel);
         }
 
         inline fn RGBAverage(color: types.RGBA32, comptime OutputIntType: type) OutputIntType {
@@ -451,18 +333,11 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
     };
 }
 
-pub inline fn U24_RGBFromBytes(bytes_in: *const u8) u24 {
+pub inline fn u24RGBFromBytes(bytes_in: *const u8) u24 {
     const bytes: [*]const u8 = @ptrCast(bytes_in);
     return (@as(u24, @intCast(bytes[2])) << @as(u5, 16)) 
         | (@as(u24, @intCast(bytes[1])) << @as(u4, 8)) 
         | (bytes[0]);
-}
-
-pub inline fn U16_RGBFromU16_R(in_pixel: u16) u16 {
-    const r = in_pixel & 0x7c00;
-    return r
-        | ((in_pixel & 0xfc00) >> 5)
-        | (r >> 11);
 }
 
 pub fn transferImage(in_image: *const Image, out_image: *Image) !void {

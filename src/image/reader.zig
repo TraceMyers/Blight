@@ -121,8 +121,8 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
         types.RG64F =>     ComponentTypeSet{ .RType=f32, .GType=f32, .BType=u1,  .AType=u1 },
         types.RGBA128F =>  ComponentTypeSet{ .RType=f32, .GType=f32, .BType=f32, .AType=f32 },
         types.RGBA128 =>   ComponentTypeSet{ .RType=u32, .GType=u32, .BType=u32, .AType=u32 },
-        types.BGR32 =>     ComponentTypeSet{ .RType=u32, .GType=u32, .BType=u32, .AType=u1 },
-        types.BGR24 =>     ComponentTypeSet{ .RType=u32, .GType=u32, .BType=u32, .AType=u1 },
+        types.BGR32 =>     ComponentTypeSet{ .RType=u8, .GType=u8, .BType=u8, .AType=u1 },
+        types.BGR24 =>     ComponentTypeSet{ .RType=u8, .GType=u8, .BType=u8, .AType=u1 },
         else => ComponentTypeSet{},
     };
 

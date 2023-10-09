@@ -8,10 +8,10 @@ Also provides special in-memory image formats RGBA128F, RGBA128, R32F, and RG64F
 ## Support Overview
 | Format | Read   | Write  |
 | :----: | :--:   | :---:  |
-|  Jpg   |:tomato:|:tomato:|
-|  Bmp   |:blush: |:tomato:|
-|  Tga   |:blush: |:tomato:|
-|  Png   |:tomato:|:tomato:|
+|  Jpg   |:finnadie:|:finnadie:|
+|  Bmp   |:green_heart: |:construction:|
+|  Tga   |:green_heart: |:finnadie:|
+|  Png   |:finnadie:|:finnadie:|
 
 More are planned!
 

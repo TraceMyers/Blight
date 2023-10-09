@@ -17,7 +17,7 @@ More are planned!
 
 ## Getting Started
 
-This library is on version 0.12.0-dev.789+e6590fea1. I will likely not be updating the version until 0.12 releases
+This library is on zig version 0.12.0-dev.789+e6590fea1. I will likely not be updating the version until 0.12 releases
 
 1. Download this repository into your project.
 2. Take a look at the types Image, PixelTag, PixelSlice, PixelContainer, ImageLoadOptions and glance over the various pixel formats, such as RGBA32, R8, etc... all in image/types.zig

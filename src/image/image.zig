@@ -2,6 +2,8 @@
 // :: Image :: 
 // :::::::::::
 
+// TODO: keep track of header info for saving to same format
+
 const std = @import("std");
 const bmp = @import("bmp.zig");
 const png = @import("png.zig");
@@ -12,6 +14,7 @@ const time = @import("../utils/time.zig");
 const config = @import("config.zig");
 const filef = @import("../utils/file.zig");
 pub const types = @import("types.zig");
+const MergedImageErrors = ImageError || filef.ImageFileError;
 
 pub const ImageFormat = filef.ImageFormat;
 pub const Image = types.Image;
@@ -38,7 +41,6 @@ pub fn load(
 
     var full_path_buf = LocalStringBuffer(std.fs.MAX_PATH_BYTES + std.fs.MAX_NAME_BYTES).new();
     const full_path = try filef.getFullPath(&full_path_buf, path, file_name, options.local_path, .Full);
-
     var file: std.fs.File = try std.fs.cwd().openFile(full_path, .{});
     defer file.close();
 
@@ -49,6 +51,7 @@ pub fn load(
     if (!options.isInputFormatAllowed(file_format)) {
         return ImageError.InputFormatDisallowed;
     }
+
     try loadIntersitial(&file, &image, allocator, options, file_format);    
 
     return image;
@@ -57,19 +60,32 @@ pub fn load(
 pub fn save(
     path: []const u8,
     file_name: []const u8,
-    format: ImageFormat,
     image: *const Image,
+    format: ImageFormat,
+    allocator: std.mem.Allocator,
     options: *const types.ImageSaveOptions
 ) !void {
     var t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("saveImage", 0)) else null;
     defer if (config.run_scope_timers) t.stop();
 
-    const file_format = if (format == .Infer) try filef.inferImageFormatFromExtension(file_name) else format;
+    if (!validateImageForSave(image)) {
+        return ImageError.UnableToValidateImageForSave;
+    }
+
+    const file_format = try filef.inferImageFormatFromExtension(file_name);
     if (file_format == .Infer) {
         return ImageError.UnableToInferFormat;
     }
+    if (format != .Infer and file_format != format) {
+        return ImageError.SaveFormatDoesNotMatchExtension;
+    }
     if (!options.isOutputFormatAllowed(file_format)) {
         return ImageError.OutputFormatDisallowed;
+    }
+    if (options.alpha == .ForcePremultiplied or (options.alpha == .UseImageAlpha and image.alpha == .Premultiplied)) {
+        if (file_format == .Bmp) { // tga ok
+            return ImageError.FormatUnableToStorePremultipliedAlpha;
+        }
     }
 
     // get the directory path...
@@ -87,15 +103,32 @@ pub fn save(
         catch try std.fs.createFileAbsolute(full_path, .{});
     defer file.close();
 
-    _ = image;
+    try saveInterstitial(&file, image, allocator, options, file_format);
+}
 
-    switch (file_format) {
-        .Bmp => return ImageError.FormatUnsupported,
-        .Jpg => return ImageError.FormatUnsupported,
-        .Png => return ImageError.FormatUnsupported,
-        .Tga => return ImageError.FormatUnsupported,
-        else => unreachable,
+pub fn validateImageForSave(image: *const Image) bool {
+    if (!image.isValid()) {
+        return false;
     }
+    var pixel_ct: usize = 0;
+    var pixel_sz: usize = 0;
+    switch (image.activePixelTag()) {
+        inline else => |tag| {
+            const pixels = image.getPixels(tag);
+            pixel_ct = pixels.len;
+            if (pixel_ct > 0) {
+                pixel_sz = @TypeOf(pixels[0]);
+            }
+        }
+    }
+    const pixel_ct_byte_sz = pixel_ct * pixel_sz;
+    if (image.getBytes().len == 0 
+        or pixel_ct_byte_sz != image.getBytes().len
+        or pixel_ct != image.len()
+    ) {
+        return false;
+    }
+    return true;
 }
 
 // for internally determining what pixel format is probably best to output given the input format
@@ -173,30 +206,145 @@ fn loadIntersitial(
     allocator: std.mem.Allocator, 
     options: *const types.ImageLoadOptions,
     file_format: ImageFormat
-) ImageError!void {
+) (ImageError 
+    || filef.ImageFileError 
+    || std.fs.File.ReadError 
+    || std.mem.Allocator.Error 
+    || std.fs.File.SeekError
+    || std.fs.File.WriteFileError
+)!void {
     switch (file_format) {
         .Bmp => 
             if (comptime config.disable_load_bmp)
                 return ImageError.FormatDisabled
             else
-                bmp.load(file, image, allocator, options) catch return ImageError.FailedRedirectedLoad,
+                try bmp.load(file, image, allocator, options),
         .Jpg => 
             if (comptime config.disable_load_jpg)
                 return ImageError.FormatDisabled
             else
-                jpg.load(file, image, allocator, options) catch return ImageError.FailedRedirectedLoad,
+                try jpg.load(file, image, allocator, options),
         .Png => 
             if (comptime config.disable_load_png)
                 return ImageError.FormatDisabled
             else
-                bmp.load(file, image, allocator, options) catch return ImageError.FailedRedirectedLoad,
+                try bmp.load(file, image, allocator, options),
         .Tga => 
             if (comptime config.disable_load_tga)
                 return ImageError.FormatDisabled
             else
-                tga.load(file, image, allocator, options) catch return ImageError.FailedRedirectedLoad,
+                try tga.load(file, image, allocator, options),
         else => unreachable,
     }
+}
+
+fn saveInterstitial(
+    file: *std.fs.File,
+    image: *const Image,
+    allocator: std.mem.Allocator,
+    options: *const types.ImageSaveOptions,
+    file_format: ImageFormat
+) !void {
+    switch (file_format) {
+        .Bmp => 
+            if (comptime config.disable_save_bmp)
+                return ImageError.FormatDisabled
+            else
+                try bmp.save(file, image, allocator, options),
+        .Jpg => 
+            if (comptime config.disable_save_jpg)
+                return ImageError.FormatDisabled
+            else
+                try jpg.save(file, image, allocator, options),
+        .Png => 
+            if (comptime config.disable_save_png)
+                return ImageError.FormatDisabled
+            else
+                try bmp.save(file, image, allocator, options),
+        .Tga => 
+            if (comptime config.disable_save_tga)
+                return ImageError.FormatDisabled
+            else
+                try tga.save(file, image, allocator, options),
+        else => unreachable,
+    }
+}
+
+pub fn determineColorMapAndRleSizeCosts(
+    rle_type: RleType, 
+    image: *const Image, 
+    palette: *Image, 
+    color_ct: *usize, 
+    rle_byte_difference: *i64, 
+    can_color_map: *bool
+) !void {
+    color_ct.* = 0;
+    rle_byte_difference.* = 0;
+    can_color_map.* = true;
+    var last_was_repeat: bool = false;
+    var last_was_new_row: bool = false;
+    // rle encodes 'actions' into the pixels - instructions about what to do next. these are the bytes sizes per format
+    const action_byte_sz = switch (rle_type) {
+        .Bmp => 2,
+        .Tga => 1,
+    };
+
+    switch (image.activePixelTag()) {
+        inline .RGBA32, .RGB16, .R8, .R16 => |tag| {
+            var palette_pixels = palette.getPixels(tag);
+            var image_pixels = image.getPixels(tag);
+            palette[0] = image_pixels[0];
+            color_ct.* = 1;
+
+            for (1..image_pixels.len) |px| {
+                const pixel = image_pixels[px];
+
+                // every new row in an rle image incurs a 2 byte penalty
+                const new_row: bool = px % image.width == 0;
+                if (new_row) {
+                    rle_byte_difference += action_byte_sz;
+                    last_was_repeat = false;
+                    last_was_new_row = true;
+                } else if (std.meta.eql(pixel, image_pixels[px - 1])) {
+                    // figure how many bytes are added with rle. every time we go from repeating pixels to non-repeating
+                    // or vice-versa, we incur a 2 byte penalty. every repeating pixel removes a byte from the image.
+                    if (last_was_repeat or last_was_new_row) {
+                        rle_byte_difference -= 1;
+                    } else {
+                        rle_byte_difference += action_byte_sz - 1;
+                    }
+                    last_was_repeat = true;
+                    last_was_new_row = false;
+                    continue;
+                } else {
+                    if (last_was_repeat) {
+                        rle_byte_difference += action_byte_sz;
+                    }
+                    last_was_repeat = false;
+                    last_was_new_row = false;
+                }
+
+                // check if the current pixel is already in the table
+                for (0..color_ct) |color| {
+                    if (std.meta.eql(pixel, palette_pixels[color])) {
+                        break;
+                    }
+                } else continue;
+
+                // can't add any more colors to the table = can't make a color map image
+                if (color_ct == 256) {
+                    can_color_map.* = false;
+                    return;
+                }
+
+                palette_pixels[color_ct] = pixel;
+                color_ct += 1;
+            }
+        }, else => unreachable,
+    }
+
+    // color maps require 2-256 colors
+    can_color_map.* = can_color_map and color_ct >= 2;
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -213,7 +361,13 @@ pub const ImageType = enum { None, RGB, RGBA };
 
 pub const ImageAlpha = enum { None, Normal, Premultiplied };
 
-pub const SaveAlpha = enum { None, UseImageAlpha, UndoPremultiplied, ForcePremultiplied };
+pub const SaveAlpha = enum { UseImageAlpha, None, UndoPremultiplied, ForcePremultiplied };
+
+// neither option will risk a reduction in color depth, but Small may take much longer
+// UseFileInfo is only valid if saving to the same format that the Image was loaded from
+pub const SaveStrategy = enum { Small, Fast };
+
+pub const RleType = enum { Bmp, Tga };
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // -------------------------------------------------------------------------------------------------------------- errors
@@ -278,6 +432,10 @@ pub const ImageError = error{
     InputFormatDisallowed,
     OutputFormatDisallowed,
     FailedRedirectedLoad,
+    UnableToValidateImageForSave,
+    SaveFormatDoesNotMatchExtension,
+    FormatUnableToStorePremultipliedAlpha,
+    DesiredSaveFormatDoesntMatchFileInfo
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

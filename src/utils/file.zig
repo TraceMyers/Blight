@@ -3,7 +3,7 @@ const string = @import("string.zig");
 
 const LocalStringBuffer = string.LocalStringBuffer;
 
-const ImageFileError = error {
+pub const ImageFileError = error {
     FullPathTooLong,
     InvalidFileSize,
     UnableToInferFormat

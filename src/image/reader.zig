@@ -121,6 +121,8 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
         types.RG64F =>     ComponentTypeSet{ .RType=f32, .GType=f32, .BType=u1,  .AType=u1 },
         types.RGBA128F =>  ComponentTypeSet{ .RType=f32, .GType=f32, .BType=f32, .AType=f32 },
         types.RGBA128 =>   ComponentTypeSet{ .RType=u32, .GType=u32, .BType=u32, .AType=u32 },
+        types.BGR32 =>     ComponentTypeSet{ .RType=u32, .GType=u32, .BType=u32, .AType=u1 },
+        types.BGR24 =>     ComponentTypeSet{ .RType=u32, .GType=u32, .BType=u32, .AType=u1 },
         else => ComponentTypeSet{},
     };
 
@@ -214,13 +216,14 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
             };
             var row_byte: usize = 0;
             for (0..out_row.len) |i| {
-                var in_pixel: InPixelIntType = undefined;
                 if (InPixelIntType == u24) {
-                    in_pixel = u24RGBFromBytes(&in_row[row_byte]);
+                    self.transferColor(u24RGBFromBytes(&in_row[row_byte]), &out_row[i]);
                 } else {
-                    in_pixel = std.mem.readIntSliceLittle(InPixelIntType, in_row[row_byte..row_byte + color_byte_sz]);
+                    self.transferColor(
+                        std.mem.readIntSliceLittle(InPixelIntType, in_row[row_byte..row_byte + color_byte_sz]),
+                        &out_row[i]
+                    );
                 }
-                self.transferColor(in_pixel, &out_row[i]);
                 row_byte += color_byte_sz;
             }
         }
@@ -264,7 +267,7 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
 
         pub inline fn transferColor(self: *const ReaderType, in_pixel: InPixelType, out_pixel: *OutPixelType) void {
             switch (InPixelTag) { 
-                .RGBA32, .RGB16 => {
+                .RGBA32, .RGB16, .BGR32, .BGR24 => {
                     out_pixel.setFromColor(in_pixel);
                 },
                 .R8, .R16, .U16_R, .U8_R => {
@@ -287,17 +290,6 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
                 },
                 else => {},
             }
-        }
-
-        inline fn RGBAverage(color: types.RGBA32, comptime OutputIntType: type) OutputIntType {
-            const inv_grey_sum_max: comptime_float = 1.0 / @as(comptime_float, @floatFromInt(255 * 3));
-            const max_cmp: comptime_float = @floatFromInt(std.math.maxInt(OutputIntType));
-            const grey_sum: u32 = @as(u32, @intCast(color.r)) 
-                + @as(u32, @intCast(color.g)) 
-                + @as(u32, @intCast(color.b));
-            const base_grey: f32 = @floatFromInt(grey_sum);
-            const white_proportion: f32 = base_grey * inv_grey_sum_max;
-            return @intFromFloat(white_proportion * max_cmp);
         }
 
         pub inline fn transferInputSupported(comptime PixelType: type) bool {

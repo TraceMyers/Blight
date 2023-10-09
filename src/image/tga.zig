@@ -390,6 +390,10 @@ fn createImage(
     }
 
     try image.init(allocator, format_tags.out_tag, image_spec.image_width, image_spec.image_height, info.alpha);
+    image.file_info = types.ImageFileInfo{ .Tga=info.* };
+    image.file_info.Tga.postage_stamp_table = null;
+    image.file_info.Tga.scanline_table = null;
+    image.file_info.Tga.color_correction_table = null;
 
     const bufptr = @as([*]const u8, @ptrCast(&buffer[0]));
     switch (info.header.info.image_type) {

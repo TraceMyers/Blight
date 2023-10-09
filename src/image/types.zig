@@ -1,6 +1,8 @@
 const std = @import("std");
 const imagef = @import("image.zig");
 const readerf = @import("reader.zig");
+const tga = @import("tga.zig");
+const bmp = @import("bmp.zig");
 
 // --- Image pixel types ---
 
@@ -80,6 +82,7 @@ pub const RGBA32 = extern struct {
             u24, u32 => self.setFromRGB((c & 0xff0000) >> 16, (c & 0x00ff00) >> 8, (c & 0x0000ff)),
             RGB16 => self.setFromRGB((c.c & 0xf800) >> 8, (c.c & 0x07e0) >> 2, (c.c & 0x001f) << 3),
             RGBA32 => self.* = c,
+            BGR32, BGR24 => self.setFromRGB(c.r, c.g, c.b),
             else => unreachable,
         }
     }
@@ -144,7 +147,7 @@ pub const RGB16 = extern struct {
                 | (@as(u16, @intCast((c & 0x00fc00) >> 5)))
                 | (@as(u16, @intCast((c & 0x0000f8) >> 3))),
             RGB16 => self.c = c.c,
-            RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            RGBA32, BGR32, BGR24 => self.setFromRGB(c.r, c.g, c.b),
             else => unreachable,
         }
     }
@@ -209,7 +212,7 @@ pub const RGB15 = extern struct {
                 | (@as(u16, @intCast((c & 0x00f800) >> 6)))
                 | (@as(u16, @intCast((c & 0x0000f8) >> 3))),
             RGB16 => self.c = ((c.c & 0xf8c0) >> 1) | (c.c & 0x003f),
-            RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            RGBA32, BGR32, BGR24 => self.setFromRGB(c.r, c.g, c.b),
             else => unreachable,
         }
     }
@@ -265,7 +268,7 @@ pub const R8 = extern struct {
                     + @as(u8, @intCast((c.c & 0x07c0) >> 6))
                     + @as(u8, @intCast(c.c & 0x001f))
                 ) * 3 - 8,
-            RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            RGBA32, BGR32, BGR24 => self.setFromRGB(c.r, c.g, c.b),
             else => unreachable,
         }
     }
@@ -311,7 +314,7 @@ pub const R16 = extern struct {
             u16 => self.r = (((c & 0xf800) >> 11) + ((c & 0x07c) >> 6) + ((c & 0x001f))) * 705 + 8,
             u24, u32 => self.setFromRGB((c & 0xff0000) >> 16, (c & 0x00ff00) >> 8, c & 0x0000ff),
             RGB16 => self.r = (((c.c & 0xf800) >> 11) + ((c.c & 0x07c) >> 6) + ((c.c & 0x001f))) * 705 + 8,
-            RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            RGBA32, BGR32, BGR24 => self.setFromRGB(c.r, c.g, c.b),
             else => unreachable,
         }
     }
@@ -364,6 +367,47 @@ pub const BGR24 = extern struct {
     b: u8 = 0,
     g: u8 = 0,
     r: u8 = 0,
+
+    pub inline fn setFromRGB(self: *RGBA32, r: u8, g: u8, b: u8) void {
+        self.b = b;
+        self.g = g;
+        self.r = r;
+    }
+
+    pub inline fn setFromRGBA(self: *RGBA32, r: u8, g: u8, b: u8, a: u8) void {
+        _ = a;
+        self.b = b;
+        self.g = g;
+        self.r = r;
+    }
+
+    pub inline fn setFromGrey(self: *RGBA32, r: anytype) void {
+        switch(@TypeOf(r)) {
+            u8 => self.setFromRGB(r, r, r),
+            u16 => {
+                const grey: u8 = @intCast(r >> 8);
+                self.setFromRGB(grey, grey, grey);
+            },
+            R8 => self.setFromRGB(r.r, r.r, r.r),
+            R16 => {
+                const grey: u8 = @intCast(r.r >> 8);
+                self.setFromRGB(grey, grey, grey);
+            },
+            else => unreachable,
+        }
+    }
+
+    pub inline fn setFromColor(self: *RGBA32, c: anytype) void {
+        switch(@TypeOf(c)) {
+            u15 => self.setFromRGB((c & 0x7c00) >> 7, (c & 0x03e0) >> 2, (c & 0x001f) << 3),
+            u16 => self.setFromRGB((c & 0xf800) >> 8, (c & 0x07e0) >> 2, (c & 0x001f) << 3),
+            u24, u32 => self.setFromRGB((c & 0xff0000) >> 16, (c & 0x00ff00) >> 8, (c & 0x0000ff)),
+            RGB16 => self.setFromRGB((c.c & 0xf800) >> 8, (c.c & 0x07e0) >> 2, (c.c & 0x001f) << 3),
+            BGR24 => self.* = c,
+            BGR32, RGBA32 => self.setFromRGB(c.r, c.g, c.b),
+            else => unreachable,
+        }
+    }
 };
 
 pub const BGR32 = extern struct {
@@ -371,6 +415,47 @@ pub const BGR32 = extern struct {
     g: u8 = 0,
     r: u8 = 0,
     reserved: u8 = 0,
+
+    pub inline fn setFromRGB(self: *RGBA32, r: u8, g: u8, b: u8) void {
+        self.b = b;
+        self.g = g;
+        self.r = r;
+    }
+
+    pub inline fn setFromRGBA(self: *RGBA32, r: u8, g: u8, b: u8, a: u8) void {
+        _ = a;
+        self.b = b;
+        self.g = g;
+        self.r = r;
+    }
+
+    pub inline fn setFromGrey(self: *RGBA32, r: anytype) void {
+        switch(@TypeOf(r)) {
+            u8 => self.setFromRGB(r, r, r),
+            u16 => {
+                const grey: u8 = @intCast(r >> 8);
+                self.setFromRGB(grey, grey, grey);
+            },
+            R8 => self.setFromRGB(r.r, r.r, r.r),
+            R16 => {
+                const grey: u8 = @intCast(r.r >> 8);
+                self.setFromRGB(grey, grey, grey);
+            },
+            else => unreachable,
+        }
+    }
+
+    pub inline fn setFromColor(self: *RGBA32, c: anytype) void {
+        switch(@TypeOf(c)) {
+            u15 => self.setFromRGB((c & 0x7c00) >> 7, (c & 0x03e0) >> 2, (c & 0x001f) << 3),
+            u16 => self.setFromRGB((c & 0xf800) >> 8, (c & 0x07e0) >> 2, (c & 0x001f) << 3),
+            u24, u32 => self.setFromRGB((c & 0xff0000) >> 16, (c & 0x00ff00) >> 8, (c & 0x0000ff)),
+            RGB16 => self.setFromRGB((c.c & 0xf800) >> 8, (c.c & 0x07e0) >> 2, (c.c & 0x001f) << 3),
+            BGR32 => self.* = c,
+            RGBA32, BGR24 => self.setFromRGB(c.r, c.g, c.b),
+            else => unreachable,
+        }
+    }
 };
 
 pub const ARGB64 = extern struct {
@@ -391,7 +476,7 @@ pub const RGBA64 = extern struct {
 
 pub const PixelTag = enum { 
     // valid image pixel formats
-    RGBA32, RGB16, R8, R16, R32F, RG64F, RGBA128F, RGBA128,
+    RGBA32, RGB16, R8, R16, R32F, RG64F, RGBA128F, RGBA128, BGR32, BGR24,
     // valid internal/file pixel formats
     U32_RGBA, U32_RGB, U24_RGB, U16_RGBA, U16_RGB, U16_RGB15, U16_R, U8_R,
     
@@ -405,6 +490,8 @@ pub const PixelTag = enum {
             .RG64F => 8,
             .RGBA128F => 16,
             .RGBA128 => 16,
+            .BGR32 => 4,
+            .BGR24 => 3,
             .U32_RGBA => 4,
             .U32_RGB => 4,
             .U24_RGB => 3,
@@ -418,7 +505,8 @@ pub const PixelTag = enum {
 
     pub fn isColor(self: PixelTag) bool {
         return switch(self) {
-            .RGBA32, .RGB16, .RGBA128F, .RGBA128, .U32_RGBA, .U32_RGB, .U24_RGB, .U16_RGBA, .U16_RGB, .U16_RGB15 => true,
+            .RGBA32, .RGB16, .RGBA128F, .RGBA128, .U32_RGBA, .U32_RGB, .U24_RGB, .U16_RGBA, .U16_RGB, .U16_RGB15,
+            .BGR32, .BGR24 => true,
             else => false,
         };
     }
@@ -439,7 +527,7 @@ pub const PixelTag = enum {
 
     pub fn canBeImage(self: PixelTag) bool {
         return switch(self) {
-            .RGBA32, .RGB16, .R8, .R16, .R32F, .RG64F, .RGBA128F, .RGBA128 => true,
+            .RGBA32, .RGB16, .R8, .R16, .R32F, .RG64F, .RGBA128F, .RGBA128, .BGR32, .BGR24, => true,
             else => false,
         };
     }
@@ -454,6 +542,8 @@ pub const PixelTag = enum {
             .RG64F => f64,
             .RGBA128F => f128,
             .RGBA128 => u128,
+            .BGR32 => u32,
+            .BGR24 => u24,
             .U32_RGBA => u32,
             .U32_RGB => u32,
             .U24_RGB => u24,
@@ -475,6 +565,8 @@ pub const PixelTag = enum {
             .RG64F => RG64F,
             .RGBA128F => RGBA128F,
             .RGBA128 => RGBA128,
+            .BGR32 => BGR32,
+            .BGR24 => BGR24,
             .U32_RGBA => u32,
             .U32_RGB => u32,
             .U24_RGB => u24,
@@ -516,6 +608,8 @@ pub const PixelSlice = union(PixelTag) {
     RG64F: []RG64F,
     RGBA128F: []RGBA128F,
     RGBA128: []RGBA128,
+    BGR32: []BGR32,
+    BGR24: []BGR24,
     U32_RGBA: []u32,
     U32_RGB: []u32,
     U24_RGB: []u24,
@@ -572,6 +666,10 @@ pub const PixelContainer = struct {
         return self.bytes == null and self.allocator == null;
     }
 
+    pub inline fn isValid(self: *const PixelContainer) bool {
+        return self.bytes != null and self.allocator != null;
+    }
+
     fn allocWithType(
         self: *PixelContainer, in_allocator: std.mem.Allocator, comptime PixelType: type, count: usize
     ) ![]PixelType {
@@ -589,11 +687,20 @@ pub const PixelContainer = struct {
 
 };
 
+pub const ImageFileInfo = union(imagef.ImageFormat) {
+    Bmp: bmp.BitmapInfo,
+    Jpg: void,
+    Png: void,
+    Tga: tga.TgaInfo,
+    Infer: void,
+};
+
 pub const Image = struct {
     width: u32 = 0,
     height: u32 = 0,
     px_container: PixelContainer = PixelContainer{},
     alpha: imagef.ImageAlpha = .None,
+    file_info: ImageFileInfo = ImageFileInfo{ .Infer=undefined },
 
     pub fn init(
         self: *Image, 
@@ -628,8 +735,16 @@ pub const Image = struct {
         return std.meta.activeTag(self.px_container.pixels);
     }
 
+    pub inline fn activeFileInfoTag(self: *const Image) imagef.ImageFormat {
+        return std.meta.activeTag(self.file_info);
+    }
+
     pub inline fn isEmpty(self: *const Image) bool {
         return self.px_container.isEmpty();
+    }
+
+    pub inline fn isValid(self: *const Image) bool {
+        return self.px_container.isValid();
     }
 
     pub inline fn getBytes(self: *Image) []u8 {
@@ -761,5 +876,47 @@ pub const ImageLoadOptions = struct {
 pub const ImageSaveOptions = struct {
     local_path: bool = false,
     alpha: imagef.SaveAlpha = .UseImageAlpha,
+    // for setting which pixel formats are allowed with functions; RGBA32, RGB16, R8, R16
+    output_format_allowed: [4]bool = .{ true, true, true, true },
+    strategy: imagef.SaveStrategy = .Small, 
+
+    pub fn setOnlyAllowedOutputFormat(self: *ImageLoadOptions, type_tag: PixelTag) !void {
+        switch (type_tag) {
+            .RGBA32, .RGB16, .R8, .R16 => {
+                inline for (0..4) |i| {
+                    self.output_format_allowed[i] = false;
+                }
+                self.output_format_allowed[@intFromEnum(type_tag)] = true;
+            },
+            else => return imagef.ImageError.NonImageFormatPassedIntoOptions,
+        }
+    }
+
+    pub fn setOutputFormatAllowed(self: *ImageLoadOptions, type_tag: PixelTag) !void {
+        switch (type_tag) {
+            .RGBA32, .RGB16, .R8, .R16 => {
+                self.output_format_allowed[@intFromEnum(type_tag)] = true;
+            },
+            else => return imagef.ImageError.NonImageFormatPassedIntoOptions,
+        }
+    }
+
+    pub fn setOutputFormatDisallowed(self: *ImageLoadOptions, type_tag: PixelTag) !void {
+        switch (type_tag) {
+            .RGBA32, .RGB16, .R8, .R16 => {
+                self.output_format_allowed[@intFromEnum(type_tag)] = false;
+            },
+            else => return imagef.ImageError.NonImageFormatPassedIntoOptions,
+        }
+    }
+
+    pub inline fn isOutputFormatAllowed(self: *const ImageLoadOptions, type_tag: PixelTag) bool {
+        switch (type_tag) {
+            .RGBA32, .RGB16, .R8, .R16 => {
+                return self.output_format_allowed[@intFromEnum(type_tag)];
+            },
+            else => return false,
+        }
+    }
 };
 

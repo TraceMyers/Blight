@@ -8,10 +8,10 @@ Also provides special in-memory image formats RGBA128F, RGBA128, R32F, and RG64F
 ## Support Overview
 | Format | Read   | Write  |
 | :----: | :--:   | :---:  |
-|  Jpg   |:finnadie:|:finnadie:|
+|  Jpg   |:broken_heart:|:broken_heart:|
 |  Bmp   |:green_heart: |:construction:|
-|  Tga   |:green_heart: |:finnadie:|
-|  Png   |:finnadie:|:finnadie:|
+|  Tga   |:green_heart: |:broken_heart:|
+|  Png   |:broken_heart:|:broken_heart:|
 
 More are planned!
 

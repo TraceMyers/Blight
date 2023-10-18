@@ -99,29 +99,25 @@ pub fn save(
     const max_image_sz = max_row_sz * image.height;
     const alloc_sz: u32 = info.data_offset + max_image_sz;
     var buffer: []align(4) u8 = try allocator.alignedAlloc(u8, 4, alloc_sz);
+    @memset(buffer, 0);
 
-    writePixelDataToBuffer(buffer, image, &info, &temp_table);
-
-    // write after finished loading buffer with pixel data:
-    // info.file_sz
-    // info.data_sz
+    try writePixelDataToBuffer(buffer, image, &info, &temp_table);
 
     writeV4InfoToBuffer(buffer, &info, &temp_table, &color_table);
 
-    // bulk write buffer to file
-
-    _ = file;
+    var write_buffer = buffer[0..info.file_sz];
+    file.writeAll(write_buffer);
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ----------------------------------------------------------------------------------------------- gathering information
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-fn writePixelDataToBuffer(buffer: []u8, image: *const Image, info: *BitmapInfo, temp_table: *BitmapColorTable) void {
+fn writePixelDataToBuffer(buffer: []u8, image: *const Image, info: *BitmapInfo, temp_table: *BitmapColorTable) !void {
     switch (info.compression) {
         .RGB => {
             switch (info.color_depth) {
-                inline 1, 4, 8 => |depth| writeColorTablePixelDataToBuffer(depth, buffer, image, info, temp_table), 
+                inline 1, 4, 8 => |depth| try writeColorTablePixelDataToBuffer(depth, buffer, image, info, temp_table), 
                 inline 16, 24, 32 => |depth| writeInlinePixelDataToBuffer(depth, false, buffer, image, info), 
                 else => unreachable,
             }
@@ -134,14 +130,69 @@ fn writePixelDataToBuffer(buffer: []u8, image: *const Image, info: *BitmapInfo, 
 
 fn writeColorTablePixelDataToBuffer(
     comptime color_depth: comptime_int, buffer: []u8, image: *const Image, info: *BitmapInfo, temp_table: *BitmapColorTable
-) void {
-    _ = color_depth;
-    _ = image;
-    _ = temp_table;
+) !void {
 
+    const row_sz: u32 = bmpRowSz(info.width * info.color_depth);
+    var buf_row_begin: usize = info.data_offset + row_sz * (info.height - 1);
+    var img_row_begin: usize = 0;
 
-    // TODO:
-    // info.data_sz =
+    const colors_per_byte: comptime_int = 8 / color_depth;
+
+    // the palette should only be empty here if the output type was determined with determineOutputFormatFast(),
+    // which only selects color table image output when the input image is 8bit grey.
+    const direct_greyscale: bool = temp_table.palette.isEmpty();
+    if (direct_greyscale and (color_depth != 8 or image.activePixelTag() != .R8)) {
+        return ImageError.BmpWriteColorTableFailure;
+    }
+
+    switch (image.activePixelTag()) {
+        inline .RGBA32, .RGB16, .R8, .R16 => |tag| {
+            const image_pixels = image.getPixels(tag);
+            const palette_pixels = temp_table.palette.getPixels(tag);
+            for (0..image.height) |row| {
+                _ = row;
+                const img_row_end = img_row_begin + image.width;
+
+                var buffer_row: [*]const u8 = @ptrCast(&buffer[buf_row_begin]);
+                var image_row: []tag.toType() = image_pixels[img_row_begin..img_row_end];
+
+                var row_idx: usize = 0;
+                write_row: for (0..row_sz) |byte| {
+                    var buffer_byte: *u8 = &buffer_row[byte];
+                    inline for (0..colors_per_byte) |byte_idx| {
+                        if (row_idx + byte_idx >= image_row.len) {
+                            break :write_row;
+                        }
+                        const image_row_idx = row_idx + byte_idx;
+                        const color: tag.toType() = image_row[image_row_idx];
+
+                        if (direct_greyscale) {
+                            buffer_byte.* = color;
+                        } else {
+                            var index: usize = std.math.maxInt(usize);
+                            for (0..palette_pixels.len) |i| {
+                                if (std.meta.eql(palette_pixels[i], color)) {
+                                    index = i;
+                                    break;
+                                }
+                            }
+                            if (index == std.math.maxInt(usize)) {
+                                return ImageError.BmpWriteColorTableFailure;
+                            }
+                            const index_write_shift: comptime_int = (colors_per_byte - byte_idx - 1) * color_depth;
+                            buffer_byte.* |= index << index_write_shift;
+                        }
+                    }
+                    row_idx += colors_per_byte;
+                }
+
+                buf_row_begin -= row_sz;
+                img_row_begin += image.width;
+            }
+        }, else => unreachable,
+    }
+
+    info.data_sz = row_sz * info.height;
     info.file_sz = buffer.len;
 }
 
@@ -151,8 +202,6 @@ fn writeInlinePixelDataToBuffer(
     _ = color_depth;
     _ = image;
     _ = is_grey;
-
-
 
 
     // TODO:
@@ -179,7 +228,7 @@ inline fn determineOutputFormat(
     image: *const Image, info: *BitmapInfo, options: *const types.ImageSaveOptions, table: *BitmapColorTable
 ) void {
     if (options.strategy == .Fast) {
-        determineOutputFormatFast(image, info);
+        determineOutputFormatFast(image, info, table);
     } else { // Small
         determineOutputFormatSmall(image, info, table);
     }
@@ -194,12 +243,17 @@ inline fn writePreliminaryInfo(image: *const Image, info: *BitmapInfo) void {
     info.color_space = BitmapColorSpace.WindowsCS;
 }
 
-fn determineOutputFormatFast(image: *const Image, info: *BitmapInfo) void {
+fn determineOutputFormatFast(image: *const Image, info: *BitmapInfo, table: *BitmapColorTable) void {
     switch (image.activePixelTag()) {
         .R8 => {
             info.compression = BitmapCompression.RGB;
             info.color_depth = 8;
             info.color_ct = 256;
+            table.palette.attachToBuffer(table.buffer[0..256], types.PixelTag.R8, 256, 1);
+            const table_pixels = table.palette.getPixels(.R8);
+            for (0..256) |i| {
+                table_pixels[i].r = i;
+            }
         }, .R16 => {
             info.compression = BitmapCompression.BITFIELDS;
             info.color_depth = 16;
@@ -227,7 +281,7 @@ fn determineOutputFormatSmall(image: *const Image, info: *BitmapInfo, table: *Bi
     var color_ct: usize = undefined;
     var rle_byte_difference: i64 = undefined;
     var can_color_map: bool = undefined;
-    table.image.attachToBuffer(
+    table.palette.attachToBuffer(
         table.buffer[0..table.buffer.len], image.activePixelTag(), table.buffer.len / image.activePixelTag().size(), 1
     );
 
@@ -239,12 +293,14 @@ fn determineOutputFormatSmall(image: *const Image, info: *BitmapInfo, table: *Bi
             3...16 => 4,
             else => 8,
         };
-        // for greater compatibility, force color map images to have tables fixed by their color depth
+        // for greater compatibility, force color map images to have table sizes fixed by their color depth
         color_ct = switch(color_map_pixel_sz) {
             1 => 2,
             4 => 16,
             8 => 256,
         };
+        table.palette.len = color_ct;
+
         const color_map_img_sz: i64 = @intCast(color_map_pixel_sz * image.len() + @sizeOf(types.RGB32) * color_ct);
         const rle_img_sz: i64 = @as(i64, @intCast(@sizeOf(u8) * image.len() + @sizeOf(types.RGB32) * 256)) 
             + rle_byte_difference;
@@ -440,7 +496,9 @@ fn writeV4InfoToBuffer(
     writeCorePartToBuffer(buffer, info);
     writeV1HeaderPartToBuffer(buffer, info);
     writeV4HeaderPartToBuffer(buffer, info);
-    writeColorTableToBuffer(buffer, info, temp_table, color_table);
+    if (!temp_table.palette.isEmpty()) {
+        writeColorTableToBuffer(buffer, info, temp_table, color_table);
+    }
 }
 
 inline fn writeCorePartToBuffer(buffer: []u8, info: *const BitmapInfo) void {

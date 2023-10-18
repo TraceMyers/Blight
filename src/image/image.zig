@@ -344,7 +344,7 @@ pub fn determineColorMapAndRleSizeCosts(
     }
 
     // color maps require 2-256 colors
-    can_color_map.* = can_color_map and color_ct >= 2;
+    can_color_map.* = can_color_map.* and color_ct >= 2;
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -435,7 +435,8 @@ pub const ImageError = error{
     UnableToValidateImageForSave,
     SaveFormatDoesNotMatchExtension,
     FormatUnableToStorePremultipliedAlpha,
-    DesiredSaveFormatDoesntMatchFileInfo
+    DesiredSaveFormatDoesntMatchFileInfo,
+    BmpWriteColorTableFailure,
 };
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

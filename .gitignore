@@ -2,3 +2,5 @@ zig-cache/
 .vscode/
 .zig-out/
 .git
+test.zig
+images/

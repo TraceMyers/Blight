@@ -79,7 +79,7 @@ pub fn save(
     if (format != .Infer and file_format != format) {
         return ImageError.SaveFormatDoesNotMatchExtension;
     }
-    if (!options.isOutputFormatAllowed(file_format)) {
+    if (!options.isOutputFormatAllowed(image.activePixelTag())) {
         return ImageError.OutputFormatDisallowed;
     }
     if (options.alpha == .ForcePremultiplied or (options.alpha == .UseImageAlpha and image.alpha == .Premultiplied)) {
@@ -92,14 +92,14 @@ pub fn save(
     var full_path_buf = LocalStringBuffer(std.fs.MAX_PATH_BYTES + std.fs.MAX_NAME_BYTES).new();
     const directory_path = try filef.getFullPath(&full_path_buf, path, file_name, options.local_path, .Directory);
     // .. and test to make sure the directory exists
-    const dir = try std.fs.openDirAbsolute(directory_path, .{});
+    var dir = try std.fs.openDirAbsolute(directory_path, .{});
     dir.close();
     // append the file name
     const full_path = try filef.getFullPath(&full_path_buf, path, file_name, options.local_path, .File);
 
     // try to open the file. if can't, then create.
     var file: std.fs.File = 
-        try std.fs.openFileAbsolute(full_path, std.fs.File.OpenFlags{ .mode = .write_only }) 
+        std.fs.openFileAbsolute(full_path, std.fs.File.OpenFlags{ .mode = .write_only }) 
         catch try std.fs.createFileAbsolute(full_path, .{});
     defer file.close();
 
@@ -114,16 +114,16 @@ pub fn validateImageForSave(image: *const Image) bool {
     var pixel_sz: usize = 0;
     switch (image.activePixelTag()) {
         inline else => |tag| {
-            const pixels = image.getPixels(tag);
+            const pixels = image.getPixels(tag) catch return false;
             pixel_ct = pixels.len;
             if (pixel_ct > 0) {
-                pixel_sz = @TypeOf(pixels[0]);
+                pixel_sz = @sizeOf(tag.toType());
             }
         }
     }
     const pixel_ct_byte_sz = pixel_ct * pixel_sz;
-    if (image.getBytes().len == 0 
-        or pixel_ct_byte_sz != image.getBytes().len
+    if (image.getBytesConst().len == 0 
+        or pixel_ct_byte_sz != image.getBytesConst().len
         or pixel_ct != image.len()
     ) {
         return false;
@@ -255,7 +255,8 @@ fn saveInterstitial(
             if (comptime config.disable_save_jpg)
                 return ImageError.FormatDisabled
             else
-                try jpg.save(file, image, allocator, options),
+                // try jpg.save(file, image, allocator, options),
+                try bmp.save(file, image, allocator, options),
         .Png => 
             if (comptime config.disable_save_png)
                 return ImageError.FormatDisabled
@@ -265,13 +266,14 @@ fn saveInterstitial(
             if (comptime config.disable_save_tga)
                 return ImageError.FormatDisabled
             else
-                try tga.save(file, image, allocator, options),
+                // try tga.save(file, image, allocator, options),
+                try bmp.save(file, image, allocator, options),
         else => unreachable,
     }
 }
 
 pub fn determineColorMapAndRleSizeCosts(
-    rle_type: RleType, 
+    comptime rle_type: RleType, 
     image: *const Image, 
     palette: *Image, 
     color_ct: *usize, 
@@ -291,9 +293,9 @@ pub fn determineColorMapAndRleSizeCosts(
 
     switch (image.activePixelTag()) {
         inline .RGBA32, .RGB16, .R8, .R16 => |tag| {
-            var palette_pixels = palette.getPixels(tag);
-            var image_pixels = image.getPixels(tag);
-            palette[0] = image_pixels[0];
+            var palette_pixels = try palette.getPixels(tag);
+            var image_pixels = try image.getPixels(tag);
+            palette_pixels[0] = image_pixels[0];
             color_ct.* = 1;
 
             for (1..image_pixels.len) |px| {
@@ -302,49 +304,49 @@ pub fn determineColorMapAndRleSizeCosts(
                 // every new row in an rle image incurs a 2 byte penalty
                 const new_row: bool = px % image.width == 0;
                 if (new_row) {
-                    rle_byte_difference += action_byte_sz;
+                    rle_byte_difference.* += action_byte_sz;
                     last_was_repeat = false;
                     last_was_new_row = true;
                 } else if (std.meta.eql(pixel, image_pixels[px - 1])) {
                     // figure how many bytes are added with rle. every time we go from repeating pixels to non-repeating
                     // or vice-versa, we incur a 2 byte penalty. every repeating pixel removes a byte from the image.
                     if (last_was_repeat or last_was_new_row) {
-                        rle_byte_difference -= 1;
+                        rle_byte_difference.* -= 1;
                     } else {
-                        rle_byte_difference += action_byte_sz - 1;
+                        rle_byte_difference.* += action_byte_sz - 1;
                     }
                     last_was_repeat = true;
                     last_was_new_row = false;
                     continue;
                 } else {
                     if (last_was_repeat) {
-                        rle_byte_difference += action_byte_sz;
+                        rle_byte_difference.* += action_byte_sz;
                     }
                     last_was_repeat = false;
                     last_was_new_row = false;
                 }
 
                 // check if the current pixel is already in the table
-                for (0..color_ct) |color| {
+                for (0..color_ct.*) |color| {
                     if (std.meta.eql(pixel, palette_pixels[color])) {
                         break;
                     }
                 } else continue;
 
                 // can't add any more colors to the table = can't make a color map image
-                if (color_ct == 256) {
+                if (color_ct.* == 256) {
                     can_color_map.* = false;
                     return;
                 }
 
-                palette_pixels[color_ct] = pixel;
-                color_ct += 1;
+                palette_pixels[color_ct.*] = pixel;
+                color_ct.* += 1;
             }
         }, else => unreachable,
     }
 
     // color maps require 2-256 colors
-    can_color_map.* = can_color_map.* and color_ct >= 2;
+    can_color_map.* = can_color_map.* and color_ct.* >= 2;
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

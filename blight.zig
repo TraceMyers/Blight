@@ -10,7 +10,11 @@ pub const types = @import("src/image/types.zig");
 pub const time = @import("src/utils/time.zig");
 pub const file = @import("src/utils/file.zig");
 
-// useful types
+// functions
+pub const load = image.load;
+pub const save = image.save;
+
+// types
 pub const RGBA32 = types.RGBA32;
 pub const RGB16 = types.RGB16;
 pub const RGB15 = types.RGB15;

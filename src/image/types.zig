@@ -416,20 +416,20 @@ pub const BGR32 = extern struct {
     r: u8 = 0,
     reserved: u8 = 0,
 
-    pub inline fn setFromRGB(self: *RGBA32, r: u8, g: u8, b: u8) void {
+    pub inline fn setFromRGB(self: *BGR32, r: u8, g: u8, b: u8) void {
         self.b = b;
         self.g = g;
         self.r = r;
     }
 
-    pub inline fn setFromRGBA(self: *RGBA32, r: u8, g: u8, b: u8, a: u8) void {
+    pub inline fn setFromRGBA(self: *BGR32, r: u8, g: u8, b: u8, a: u8) void {
         _ = a;
         self.b = b;
         self.g = g;
         self.r = r;
     }
 
-    pub inline fn setFromGrey(self: *RGBA32, r: anytype) void {
+    pub inline fn setFromGrey(self: *BGR32, r: anytype) void {
         switch(@TypeOf(r)) {
             u8 => self.setFromRGB(r, r, r),
             u16 => {
@@ -445,7 +445,7 @@ pub const BGR32 = extern struct {
         }
     }
 
-    pub inline fn setFromColor(self: *RGBA32, c: anytype) void {
+    pub inline fn setFromColor(self: *BGR32, c: anytype) void {
         switch(@TypeOf(c)) {
             u15 => self.setFromRGB((c & 0x7c00) >> 7, (c & 0x03e0) >> 2, (c & 0x001f) << 3),
             u16 => self.setFromRGB((c & 0xf800) >> 8, (c & 0x07e0) >> 2, (c & 0x001f) << 3),
@@ -751,6 +751,14 @@ pub const Image = struct {
         return self.px_container.bytes.?;
     }
 
+    pub inline fn getBytesConst(self: *const Image) []const u8 {
+        return self.px_container.bytes.?;
+    }
+
+    pub inline fn setBytesLen(self: *Image, new_len: usize) void {
+        self.px_container.bytes.?.len = new_len;
+    }
+
     // attach/unattach can cause a memory leak if you're manually unattaching from heap buffers. using attach/unattach 
     // with heap buffers is not recommended.
     pub fn attachToBuffer(self: *Image, buffer: []u8, type_tag: PixelTag, width: u32, height: u32) !void {
@@ -880,7 +888,7 @@ pub const ImageSaveOptions = struct {
     output_format_allowed: [4]bool = .{ true, true, true, true },
     strategy: imagef.SaveStrategy = .Small, 
 
-    pub fn setOnlyAllowedOutputFormat(self: *ImageLoadOptions, type_tag: PixelTag) !void {
+    pub fn setOnlyAllowedOutputFormat(self: *ImageSaveOptions, type_tag: PixelTag) !void {
         switch (type_tag) {
             .RGBA32, .RGB16, .R8, .R16 => {
                 inline for (0..4) |i| {
@@ -892,7 +900,7 @@ pub const ImageSaveOptions = struct {
         }
     }
 
-    pub fn setOutputFormatAllowed(self: *ImageLoadOptions, type_tag: PixelTag) !void {
+    pub fn setOutputFormatAllowed(self: *ImageSaveOptions, type_tag: PixelTag) !void {
         switch (type_tag) {
             .RGBA32, .RGB16, .R8, .R16 => {
                 self.output_format_allowed[@intFromEnum(type_tag)] = true;
@@ -901,7 +909,7 @@ pub const ImageSaveOptions = struct {
         }
     }
 
-    pub fn setOutputFormatDisallowed(self: *ImageLoadOptions, type_tag: PixelTag) !void {
+    pub fn setOutputFormatDisallowed(self: *ImageSaveOptions, type_tag: PixelTag) !void {
         switch (type_tag) {
             .RGBA32, .RGB16, .R8, .R16 => {
                 self.output_format_allowed[@intFromEnum(type_tag)] = false;
@@ -910,7 +918,7 @@ pub const ImageSaveOptions = struct {
         }
     }
 
-    pub inline fn isOutputFormatAllowed(self: *const ImageLoadOptions, type_tag: PixelTag) bool {
+    pub inline fn isOutputFormatAllowed(self: *const ImageSaveOptions, type_tag: PixelTag) bool {
         switch (type_tag) {
             .RGBA32, .RGB16, .R8, .R16 => {
                 return self.output_format_allowed[@intFromEnum(type_tag)];

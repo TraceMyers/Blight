@@ -98,7 +98,8 @@ pub fn save(
     const max_row_sz = bmpRowSz(unaligned_max_row_bits);
     const max_image_sz = max_row_sz * image.height;
     const alloc_sz: u32 = info.data_offset + max_image_sz;
-    var buffer: []align(4) u8 = try allocator.alignedAlloc(u8, 4, alloc_sz);
+    var buffer: []u8 = try allocator.alloc(u8, alloc_sz);
+    defer allocator.free(buffer);
     @memset(buffer, 0);
 
     try writePixelDataToBuffer(buffer, image, &info, &temp_table);
@@ -318,6 +319,7 @@ fn determineOutputFormatSmall(image: *const Image, info: *BitmapInfo, table: *Bi
         const default_img_sz: i64 = default_pixel_sz * @as(i64, @intCast(image.len()));
 
         if (default_img_sz <= color_map_img_sz and default_img_sz <= rle_img_sz) {
+            table.palette.unattachFromBuffer();
             try determineOutputFormatFast(image, info, table);
         } else if (color_map_img_sz < rle_img_sz) {
             info.compression = BitmapCompression.RGB;
@@ -330,6 +332,7 @@ fn determineOutputFormatSmall(image: *const Image, info: *BitmapInfo, table: *Bi
             info.color_ct = 256;
         }
     } else {
+        table.palette.unattachFromBuffer();
         try determineOutputFormatFast(image, info, table);
     }
 }
@@ -498,18 +501,22 @@ inline fn readColorMasks(buffer: []u8, info: *BitmapInfo, alpha: bool) void {
     }
 }
 
-fn writeV4InfoToBuffer(
+noinline fn writeV4InfoToBuffer(
     buffer: []u8, info: *const BitmapInfo, temp_table: *const BitmapColorTable, color_table: *BitmapColorTable
 ) !void {
-    writeCorePartToBuffer(buffer, info);
-    writeV1HeaderPartToBuffer(buffer, info);
-    writeV4HeaderPartToBuffer(buffer, info);
-    if (!temp_table.palette.isEmpty()) {
-        try writeColorTableToBuffer(buffer, info, temp_table, color_table);
-    }
+    // writeCorePartToBuffer(buffer, info);
+    // writeV1HeaderPartToBuffer(buffer, info);
+    // writeV4HeaderPartToBuffer(buffer, info);
+    // if (!temp_table.palette.isEmpty()) {
+    //     try writeColorTableToBuffer(buffer, info, temp_table, color_table);
+    // }
+    _ = color_table;
+    _ = temp_table;
+    _ = info;
+    _ = buffer;
 }
 
-inline fn writeCorePartToBuffer(buffer: []u8, info: *const BitmapInfo) void {
+fn writeCorePartToBuffer(buffer: []u8, info: *const BitmapInfo) void {
     @memcpy(buffer[0..2], filef.bmp_identifier[0..2]);
     std.mem.writeIntLittle(u32, buffer[2..6], info.file_sz);
     @memset(buffer[6..10], @as(u8, 0));
@@ -545,7 +552,7 @@ inline fn writeColorMasksToBuffer(buffer: []u8, info: *const BitmapInfo) void {
     std.mem.writeIntLittle(u32, buffer[66..70], info.alpha_mask);
 }
 
-fn writeColorTableToBuffer(
+noinline fn writeColorTableToBuffer(
     buffer: []u8, info: *const BitmapInfo, temp_table: *const BitmapColorTable, color_table: *BitmapColorTable
 ) !void {
     if ((info.compression != .RGB and info.compression != .RLE8) or info.color_depth > 8) {
@@ -1094,7 +1101,7 @@ const FxPt2Dot30 = extern struct {
 };
 
 pub const BitmapColorTable = struct {
-    buffer: [1024]u8 = undefined,
+    buffer: [1024]u8 align(@alignOf(types.BGR32)) = undefined,
     palette: Image = Image{},
 };
 

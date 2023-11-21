@@ -447,10 +447,22 @@ pub const BGR32 = extern struct {
 
     pub inline fn setFromColor(self: *BGR32, c: anytype) void {
         switch(@TypeOf(c)) {
-            u15 => self.setFromRGB((c & 0x7c00) >> 7, (c & 0x03e0) >> 2, (c & 0x001f) << 3),
-            u16 => self.setFromRGB((c & 0xf800) >> 8, (c & 0x07e0) >> 2, (c & 0x001f) << 3),
-            u24, u32 => self.setFromRGB((c & 0xff0000) >> 16, (c & 0x00ff00) >> 8, (c & 0x0000ff)),
-            RGB16 => self.setFromRGB((c.c & 0xf800) >> 8, (c.c & 0x07e0) >> 2, (c.c & 0x001f) << 3),
+            u15 => self.setFromRGB(
+                @as(u8, @intCast((c & 0x7c00) >> 7)), 
+                @as(u8, @intCast((c & 0x03e0) >> 2)), 
+                @as(u8, @intCast((c & 0x001f) << 3))),
+            u16 => self.setFromRGB(
+                @as(u8, @intCast((c & 0xf800) >> 8)), 
+                @as(u8, @intCast((c & 0x07e0) >> 2)), 
+                @as(u8, @intCast((c & 0x001f) << 3))),
+            u24, u32 => self.setFromRGB(
+                @as(u8, @intCast((c & 0xff0000) >> 16)), 
+                @as(u8, @intCast((c & 0x00ff00) >> 8)), 
+                @as(u8, @intCast((c & 0x0000ff)))),
+            RGB16 => self.setFromRGB(
+                @as(u8, @intCast((c.c & 0xf800) >> 8)), 
+                @as(u8, @intCast((c.c & 0x07e0) >> 2)), 
+                @as(u8, @intCast(((c.c & 0x001f) << 3)))),
             BGR32 => self.* = c,
             RGBA32, BGR24 => self.setFromRGB(c.r, c.g, c.b),
             else => unreachable,

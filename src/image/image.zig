@@ -36,8 +36,8 @@ pub fn load(
     allocator: std.mem.Allocator,
     options: *const types.ImageLoadOptions
 ) !Image {
-    const t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("loadImage", 0)) else null;
-    defer if (config.run_scope_timers) t.stop();
+    // const t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("loadImage", 0)) else null;
+    // defer if (config.run_scope_timers) t.stop();
 
     var full_path_buf = LocalStringBuffer(std.fs.MAX_PATH_BYTES + std.fs.MAX_NAME_BYTES).new();
     const full_path = try filef.getFullPath(&full_path_buf, path, file_name, options.local_path, .Full);
@@ -65,8 +65,8 @@ pub fn save(
     allocator: std.mem.Allocator,
     options: *const types.ImageSaveOptions
 ) !void {
-    var t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("saveImage", 0)) else null;
-    defer if (config.run_scope_timers) t.stop();
+    // var t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("saveImage", 0)) else null;
+    // defer if (config.run_scope_timers) t.stop();
 
     if (!validateImageForSave(image)) {
         return ImageError.UnableToValidateImageForSave;

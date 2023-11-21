@@ -9,7 +9,14 @@ pub fn build(b: *std.Build) void {
         .{ .source_file = .{ .path = "blight.zig" },}
     );
 
-    // b.installArtifact(lib);
+    const exe = b.addExecutable(.{
+        .name = "test",
+        .root_source_file = .{ .path = "test.zig" },
+        .target = target,
+        .optimize = optimize
+    });
+
+    b.installArtifact(exe);
 
     const main_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/image/image.zig" },

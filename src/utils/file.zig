@@ -115,7 +115,7 @@ pub fn inferImageFormatFromFile(file: *std.fs.File) !ImageFormat {
 // ----------------------------------------------------------------------------------------------------------- constants
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-pub const bmp_identifier = "BM";
+pub const bmp_identifier: *const [2:0]u8 = "BM";
 pub const png_identifier = "\x89PNG\x0d\x0a\x1a\x0a";
 pub const tga_identifier = "TRUEVISION-XFILE";
 pub const tga_signature_end_offset = 18;

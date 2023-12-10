@@ -1,5 +1,5 @@
 # Blight
-A highly flexible image loading/saving library written in Zig.
+An image loading/saving library written in Zig.
 
 When loading, translates all file formats to your choice of RGBA32, RGB16, R8, or R16. When saving, translates the memory formats to any of the supported file formats.
 

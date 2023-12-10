@@ -1,12 +1,12 @@
 const std = @import("std");
 const imagef = @import("image.zig");
-const string = @import("../utils/string.zig");
+const string = @import("string.zig");
 const readerf = @import("reader.zig");
 const types = @import("types.zig");
 const config = @import("config.zig");
-const filef = @import("../utils/file.zig");
+const filef = @import("file.zig");
 
-const LocalBuffer = @import("../utils/localbuffer.zig").LocalBuffer;
+const LocalBuffer = @import("localbuffer.zig").LocalBuffer;
 const Image = types.Image;
 const ImageError = imagef.ImageError;
 const print = std.debug.print;
@@ -39,7 +39,7 @@ pub fn load(
     try readExtensionData(file, &info, allocator, &extents);
     try readImageId(file, &info, &extents);
 
-    var buffer: []align(4) u8 = try loadColorMapAndImageData(file, &info, allocator, &extents);
+    const buffer: []align(4) u8 = try loadColorMapAndImageData(file, &info, allocator, &extents);
     defer allocator.free(buffer);
 
     try createImage(&info, image, allocator, buffer, options);
@@ -97,7 +97,7 @@ fn readExtensionData(file: *std.fs.File, info: *TgaInfo, allocator: std.mem.Allo
 
     try file.seekTo(extension_area_begin);
     info.extension_area = ExtensionArea{};
-    info.extension_area.?.extension_sz = try file.reader().readIntLittle(u16);
+    info.extension_area.?.extension_sz = try file.reader().readInt(u16, .little);
 
     if (extension_area_begin + info.extension_area.?.extension_sz > info.file_sz
         or info.extension_area.?.extension_sz != extension_area_file_sz
@@ -144,20 +144,20 @@ fn readExtensionArea(file: *std.fs.File, info: *TgaInfo) !void {
     // info.extension_area.?.timestamp = 
     info.extension_area.?.job_name = extbuf[377..418].*;
     inline for(0..3) |i| {
-        info.extension_area.?.job_time[i] = std.mem.readIntLittle(u16, extbuf[418+(i*2)..420+(i*2)]);
+        info.extension_area.?.job_time[i] = std.mem.readInt(u16, extbuf[418+(i*2)..420+(i*2)], .little);
     }
     info.extension_area.?.software_id = extbuf[424..465].*;
     info.extension_area.?.software_version = extbuf[465..468].*;
-    info.extension_area.?.key_color = std.mem.readIntLittle(u32, extbuf[468..472]);
+    info.extension_area.?.key_color = std.mem.readInt(u32, extbuf[468..472], .little);
     inline for(0..2) |i| {
-        info.extension_area.?.pixel_aspect_ratio[i] = std.mem.readIntLittle(u16, extbuf[472+(i*2)..474+(i*2)]);
+        info.extension_area.?.pixel_aspect_ratio[i] = std.mem.readInt(u16, extbuf[472+(i*2)..474+(i*2)], .little);
     }
     inline for(0..2) |i| {
-        info.extension_area.?.gamma[i] = std.mem.readIntLittle(u16, extbuf[476+(i*2)..478+(i*2)]);
+        info.extension_area.?.gamma[i] = std.mem.readInt(u16, extbuf[476+(i*2)..478+(i*2)], .little);
     }
-    info.extension_area.?.color_correction_offset = std.mem.readIntLittle(u32, extbuf[480..484]);
-    info.extension_area.?.postage_stamp_offset = std.mem.readIntLittle(u32, extbuf[484..488]);
-    info.extension_area.?.scanline_offset = std.mem.readIntLittle(u32, extbuf[488..492]);
+    info.extension_area.?.color_correction_offset = std.mem.readInt(u32, extbuf[480..484], .little);
+    info.extension_area.?.postage_stamp_offset = std.mem.readInt(u32, extbuf[484..488], .little);
+    info.extension_area.?.scanline_offset = std.mem.readInt(u32, extbuf[488..492], .little);
     info.extension_area.?.attributes_type = extbuf[492];
 }
 
@@ -220,7 +220,7 @@ fn loadColorMapAndImageData(
     const image_spec = info.header.image_spec;
     const colormap_spec = info.header.colormap_spec;
 
-    var ct_start: u32 = tga_header_sz + info.header.info.id_length;
+    const ct_start: u32 = tga_header_sz + info.header.info.id_length;
     var ct_end: u32 = ct_start;
     switch(image_type) {
         .NoData, .TrueColor, .Greyscale, .RleTrueColor, .RleGreyscale => {
@@ -296,13 +296,13 @@ fn readColorMapData(info: *TgaInfo, allocator: std.mem.Allocator, buffer: []cons
         var entry: *types.RGBA32 = &info.color_map.table.?[i];
         switch (cm_spec.entry_bit_ct) {
             15 => {
-                const color: u16 = std.mem.readIntSliceLittle(u16, buffer[offset..offset+2]);
+                const color: u16 = std.mem.readInt(u16, @as(*const [2]u8, @ptrCast(&buffer[offset])), .little);
                 entry.r = @intCast((color & 0x7c00) >> 7);
                 entry.g = @intCast((color & 0x03e0) >> 3);
                 entry.b = @intCast((color & 0x001f) << 3);
                 entry.a = 255;
             }, 16 => {
-                const color: u16 = std.mem.readIntSliceLittle(u16, buffer[offset..offset+2]);
+                const color: u16 = std.mem.readInt(u16, @as(*const [2]u8, @ptrCast(&buffer[offset])), .little);
                 entry.r = @intCast((color & 0xf800) >> 8);
                 entry.g = @intCast((color & 0x07e0) >> 3);
                 entry.b = @intCast((color & 0x001f) << 3);
@@ -499,8 +499,8 @@ fn readInlinePixelImageImpl(
             return ImageError.UnexpectedEndOfImageBuffer;
         }
 
-        var file_row: [*]const u8 = @ptrCast(&buffer[@intCast(read_info.read_start)]);
-        var image_row = image_pixels[@intCast(read_info.write_start)..@intCast(write_end)];
+        const file_row: [*]const u8 = @ptrCast(&buffer[@intCast(read_info.read_start)]);
+        const image_row = image_pixels[@intCast(read_info.write_start)..@intCast(write_end)];
 
         transfer.transferRowFromBytes(file_row, image_row);
 
@@ -546,8 +546,8 @@ fn readColorMapImageImpl(
             return ImageError.UnexpectedEndOfImageBuffer;
         }
 
-        var index_row = buffer[@intCast(read_info.read_start)..@intCast(read_end)];
-        var image_row = image_pixels[@intCast(read_info.write_start)..@intCast(write_end)];
+        const index_row = buffer[@intCast(read_info.read_start)..@intCast(read_end)];
+        const image_row = image_pixels[@intCast(read_info.write_start)..@intCast(write_end)];
 
         try transfer.transferColorTableImageRow(
             IndexIntType, index_row, info.color_map.table.?, image_row, @intCast(read_info.read_row_step)

@@ -105,8 +105,8 @@ pub fn printAllScopeTimers(print_ids: bool) void {
 }
 
 inline fn getScopeTimerReportInternal(timer: *const InternalTimer) ScopeTimerReport {
-    var total_time_f: f64 = @floatFromInt(timer.total_time);
-    var ticks_f: f64 = @floatFromInt(timer.log_ct);
+    const total_time_f: f64 = @floatFromInt(timer.total_time);
+    const ticks_f: f64 = @floatFromInt(timer.log_ct);
     return ScopeTimerReport{
         .avg_time = convert.nano100ToMilli(total_time_f / ticks_f),
         .max_time = convert.nano100ToMilli(@as(f64, @floatFromInt(timer.max_time))),
@@ -128,13 +128,13 @@ pub const ScopeTimer = struct {
     start_time: u64,
 
     pub inline fn start(in_id: ?ScopeTimerID) ScopeTimer {
-        var start_inst = std.time.Instant.now() catch std.time.Instant{.timestamp=0};
+        const start_inst = std.time.Instant.now() catch std.time.Instant{.timestamp=0};
         return ScopeTimer{.id=in_id, .start_time=start_inst.timestamp};
     }
 
     pub fn stop(self: *const ScopeTimer) void {
         if (self.id == null) return;
-        var end_inst = std.time.Instant.now() catch std.time.Instant{.timestamp=self.start_time};
+        const end_inst = std.time.Instant.now() catch std.time.Instant{.timestamp=self.start_time};
         logEndTime(self.id.?, end_inst.timestamp - self.start_time);
     }
 };

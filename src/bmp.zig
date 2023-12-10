@@ -1,11 +1,11 @@
 const std = @import("std");
-const string = @import("../utils/string.zig");
+const string = @import("string.zig");
 const imagef = @import("image.zig");
-const time = @import("../utils/time.zig");
+const time = @import("time.zig");
 const readerf = @import("reader.zig");
 const types = @import("types.zig");
 const config = @import("config.zig");
-const filef = @import("../utils/file.zig");
+const filef = @import("file.zig");
 
 const LocalStringBuffer = string.LocalStringBuffer;
 const print = std.debug.print;
@@ -45,7 +45,7 @@ const ColorLayout = readerf.ColorLayout;
 pub fn load(
     file: *std.fs.File, image: *Image, allocator: std.mem.Allocator, options: *const types.ImageLoadOptions
 ) !void {
-    var buffer: []align(4) u8 = try loadFileAndCoreHeaders(file, allocator, bmp_min_sz);
+    const buffer: []align(4) u8 = try loadFileAndCoreHeaders(file, allocator, bmp_min_sz);
     defer allocator.free(buffer);
 
     if (!validateIdentity(buffer)) {
@@ -106,7 +106,9 @@ pub fn save(
 
     try writeV4InfoToBuffer(buffer, &info, &temp_table, &color_table);
 
-    var write_buffer = buffer[0..info.file_sz];
+    print("saving file with compression {any}, color depth {}\n", .{info.compression, info.color_depth});
+
+    const write_buffer = buffer[0..info.file_sz];
     try file.writeAll(write_buffer);
 }
 
@@ -154,11 +156,11 @@ fn writeColorTablePixelDataToBuffer(
                 const img_row_end = img_row_begin + image.width;
 
                 var buffer_row: [*]u8 = @ptrCast(&buffer[buf_row_begin]);
-                var image_row: []tag.toType() = image_pixels[img_row_begin..img_row_end];
+                const image_row: []tag.toType() = image_pixels[img_row_begin..img_row_end];
 
                 var row_idx: usize = 0;
                 write_row: for (0..row_sz) |byte| {
-                    var buffer_byte: *u8 = &buffer_row[byte];
+                    const buffer_byte: *u8 = &buffer_row[byte];
                     inline for (0..colors_per_byte) |byte_idx| {
                         if (row_idx + byte_idx >= image_row.len) {
                             break :write_row;
@@ -221,6 +223,14 @@ fn writeRlePixelDataToBuffer(
     _ = info;
     _ = temp_table;
 
+   //  var buf_row_begin: usize = info.data_offset;
+   //  var img_row_begin: usize = 0;
+   //  
+
+   //  const img_row_end = img_row_begin + image.width;
+
+   //  var buffer_row: [*]u8 = @ptrCast(&buffer[buf_row_begin]);
+   //  const image_row: []tag.toType() = image_pixels[img_row_begin..img_row_end];
 
     // TODO:
     // info.data_sz =
@@ -295,6 +305,8 @@ fn determineOutputFormatSmall(image: *const Image, info: *BitmapInfo, table: *Bi
         imagef.RleType.Bmp, image, &table.palette, &color_ct, &rle_byte_difference, &can_color_map
     );
 
+    print("color ct: {}, can color map: {}\n", .{color_ct, can_color_map});
+
     if (can_color_map) {
         const color_map_pixel_sz: usize = switch(color_ct) {
             2 => 1,
@@ -319,14 +331,16 @@ fn determineOutputFormatSmall(image: *const Image, info: *BitmapInfo, table: *Bi
         const default_img_sz: i64 = default_pixel_sz * @as(i64, @intCast(image.len()));
 
         if (default_img_sz <= color_map_img_sz and default_img_sz <= rle_img_sz) {
+            // probably inline color image
             table.palette.unattachFromBuffer();
             try determineOutputFormatFast(image, info, table);
         } else if (color_map_img_sz < rle_img_sz) {
+            // color table image
             info.compression = BitmapCompression.RGB;
             info.color_depth = @intCast(color_map_pixel_sz);
             info.color_ct = @intCast(color_ct);
         } else {
-            // do rle
+            // rle compression
             info.compression = BitmapCompression.RLE8;
             info.color_depth = 8;
             info.color_ct = 256;
@@ -337,11 +351,7 @@ fn determineOutputFormatSmall(image: *const Image, info: *BitmapInfo, table: *Bi
     }
 }
 
-fn loadFileAndCoreHeaders(
-    file: *std.fs.File, 
-    allocator: std.mem.Allocator, 
-    min_sz: usize, 
-) ![]align(4) u8 {
+fn loadFileAndCoreHeaders(file: *std.fs.File, allocator: std.mem.Allocator, min_sz: usize) ![]align(4) u8 {
     const stat = try file.stat();
     if (stat.size + 4 > config.max_alloc_sz) {
         return ImageError.AllocTooLarge;
@@ -376,18 +386,18 @@ fn loadRemainder(file: *std.fs.File, buffer: []u8, info: *BitmapInfo) !void {
     const offset_mod_4_neq_0: u32 = @intFromBool(offset_mod_4 != 0);
     info.data_offset = info.data_offset + offset_mod_4_neq_0 * (4 - offset_mod_4);
 
-    var data_buf: []u8 = buffer[info.data_offset..];
+    const data_buf: []u8 = buffer[info.data_offset..];
     _ = try file.reader().read(data_buf);
 }
 
 inline fn readInitial(buffer: []const u8, info: *BitmapInfo) bool {
-    info.file_sz = std.mem.readIntLittle(u32, buffer[2..6]);
-    const reserved_verify_zero = std.mem.readIntLittle(u32, buffer[6..10]);
+    info.file_sz = std.mem.readInt(u32, buffer[2..6], .little);
+    const reserved_verify_zero = std.mem.readInt(u32, buffer[6..10], .little);
     if (reserved_verify_zero != 0) {
         return false;
     }
-    info.data_offset = std.mem.readIntLittle(u32, buffer[10..14]);
-    info.header_sz = std.mem.readIntLittle(u32, buffer[14..18]);
+    info.data_offset = std.mem.readInt(u32, buffer[10..14], .little);
+    info.header_sz = std.mem.readInt(u32, buffer[14..18], .little);
     return true;
 }
 
@@ -401,9 +411,9 @@ fn validateIdentity(buffer: []const u8) bool {
 
 fn readCoreInfo(buffer: []u8, info: *BitmapInfo, color_table: *BitmapColorTable) !usize {
     info.header_type = BitmapHeaderType.Core;
-    info.width = @intCast(std.mem.readIntLittle(i16, buffer[18..20]));
-    info.height = @intCast(std.mem.readIntLittle(i16, buffer[20..22]));
-    info.color_depth = @intCast(std.mem.readIntLittle(u16, buffer[24..26]));
+    info.width = @intCast(std.mem.readInt(i16, buffer[18..20], .little));
+    info.height = @intCast(std.mem.readInt(i16, buffer[20..22], .little));
+    info.color_depth = @intCast(std.mem.readInt(u16, buffer[24..26], .little));
     const data_size_signed = @as(i32, @intCast(info.file_sz)) - @as(i32, @intCast(info.data_offset));
     if (data_size_signed < 4) {
         return ImageError.BmpInvalidBytesInInfoHeader;
@@ -451,21 +461,21 @@ fn readV5Info(buffer: []u8, info: *BitmapInfo, color_table: *BitmapColorTable) !
 }
 
 fn readV1HeaderPart(buffer: []u8, info: *BitmapInfo) !void {
-    info.width = std.mem.readIntLittle(i32, buffer[18..22]);
-    info.height = std.mem.readIntLittle(i32, buffer[22..26]);
-    info.color_depth = @intCast(std.mem.readIntLittle(u16, buffer[28..30]));
-    const compression_int = std.mem.readIntLittle(u32, buffer[30..34]);
+    info.width = std.mem.readInt(i32, buffer[18..22], .little);
+    info.height = std.mem.readInt(i32, buffer[22..26], .little);
+    info.color_depth = @intCast(std.mem.readInt(u16, buffer[28..30], .little));
+    const compression_int = std.mem.readInt(u32, buffer[30..34], .little);
     if (compression_int > 9) {
         return ImageError.BmpInvalidBytesInInfoHeader;
     }
     info.compression = @enumFromInt(compression_int);
-    info.data_size = std.mem.readIntLittle(u32, buffer[34..38]);
-    info.color_ct = std.mem.readIntLittle(u32, buffer[46..50]);
+    info.data_size = std.mem.readInt(u32, buffer[34..38], .little);
+    info.color_ct = std.mem.readInt(u32, buffer[46..50], .little);
 }
 
 fn readV4HeaderPart(buffer: []u8, info: *BitmapInfo) !void {
     readColorMasks(buffer, info, true);
-    const color_space_int = std.mem.readIntLittle(u32, buffer[70..74]);
+    const color_space_int = std.mem.readInt(u32, buffer[70..74], .little);
     if (color_space_int != 0 
         and color_space_int != 0x4c494e4b 
         and color_space_int != 0x4d424544 
@@ -482,74 +492,70 @@ fn readV4HeaderPart(buffer: []u8, info: *BitmapInfo) !void {
     @memcpy(info.cs_points.red[0..3], buffer_casted[0..3]);
     @memcpy(info.cs_points.green[0..3], buffer_casted[3..6]);
     @memcpy(info.cs_points.blue[0..3], buffer_casted[6..9]);
-    info.red_gamma = std.mem.readIntLittle(u32, buffer[110..114]);
-    info.green_gamma = std.mem.readIntLittle(u32, buffer[114..118]);
-    info.blue_gamma = std.mem.readIntLittle(u32, buffer[118..122]);
+    info.red_gamma = std.mem.readInt(u32, buffer[110..114], .little);
+    info.green_gamma = std.mem.readInt(u32, buffer[114..118], .little);
+    info.blue_gamma = std.mem.readInt(u32, buffer[118..122], .little);
 }
 
 inline fn readV5HeaderPart(buffer: []u8, info: *BitmapInfo) void {
-    info.profile_data = std.mem.readIntLittle(u32, buffer[126..130]);
-    info.profile_size = std.mem.readIntLittle(u32, buffer[130..134]);
+    info.profile_data = std.mem.readInt(u32, buffer[126..130], .little);
+    info.profile_size = std.mem.readInt(u32, buffer[130..134], .little);
 }
 
 inline fn readColorMasks(buffer: []u8, info: *BitmapInfo, alpha: bool) void {
-    info.red_mask = std.mem.readIntLittle(u32, buffer[54..58]);
-    info.green_mask = std.mem.readIntLittle(u32, buffer[58..62]);
-    info.blue_mask = std.mem.readIntLittle(u32, buffer[62..66]);
+    info.red_mask = std.mem.readInt(u32, buffer[54..58], .little);
+    info.green_mask = std.mem.readInt(u32, buffer[58..62], .little);
+    info.blue_mask = std.mem.readInt(u32, buffer[62..66], .little);
     if (alpha) {
-        info.alpha_mask = std.mem.readIntLittle(u32, buffer[66..70]);
+        info.alpha_mask = std.mem.readInt(u32, buffer[66..70], .little);
     }
 }
 
 noinline fn writeV4InfoToBuffer(
     buffer: []u8, info: *const BitmapInfo, temp_table: *const BitmapColorTable, color_table: *BitmapColorTable
 ) !void {
-    // writeCorePartToBuffer(buffer, info);
-    // writeV1HeaderPartToBuffer(buffer, info);
-    // writeV4HeaderPartToBuffer(buffer, info);
-    // if (!temp_table.palette.isEmpty()) {
-    //     try writeColorTableToBuffer(buffer, info, temp_table, color_table);
-    // }
-    _ = color_table;
-    _ = temp_table;
-    _ = info;
-    _ = buffer;
+    writeCorePartToBuffer(buffer, info);
+    writeV1HeaderPartToBuffer(buffer, info);
+    writeV4HeaderPartToBuffer(buffer, info);
+    if (!temp_table.palette.isEmpty()) {
+        try writeColorTableToBuffer(buffer, info, temp_table, color_table);
+    }
 }
 
 fn writeCorePartToBuffer(buffer: []u8, info: *const BitmapInfo) void {
     @memcpy(buffer[0..2], filef.bmp_identifier[0..2]);
-    std.mem.writeIntLittle(u32, buffer[2..6], info.file_sz);
+    std.mem.writeInt(u32, buffer[2..6], info.file_sz, .little);
     @memset(buffer[6..10], @as(u8, 0));
-    std.mem.writeIntLittle(u32, buffer[10..14], info.data_offset);
-    std.mem.writeIntLittle(u32, buffer[14..18], info.header_sz);
+    std.mem.writeInt(u32, buffer[10..14], info.data_offset, .little);
+    std.mem.writeInt(u32, buffer[14..18], info.header_sz, .little);
 }
 
-inline fn writeV1HeaderPartToBuffer(buffer: []u8, info: *const BitmapInfo) void {
-    std.mem.writeIntLittle(i32, buffer[18..22], @as(i32, @intCast(info.width)));
-    std.mem.writeIntLittle(i32, buffer[22..26], @as(i32, @intCast(info.height)));
-    std.mem.writeIntLittle(u16, buffer[28..30], @as(u16, @intCast(info.color_depth)));
-    std.mem.writeIntLittle(u32, buffer[30..34], @intFromEnum(info.compression));
-    std.mem.writeIntLittle(u32, buffer[34..38], info.data_size);
-    std.mem.writeIntLittle(u32, buffer[46..50], info.color_ct);
+fn writeV1HeaderPartToBuffer(buffer: []u8, info: *const BitmapInfo) void {
+    std.mem.writeInt(i32, buffer[18..22], @as(i32, @intCast(info.width)), .little);
+    std.mem.writeInt(i32, buffer[22..26], @as(i32, @intCast(info.height)), .little);
+    std.mem.writeInt(u16, buffer[28..30], @as(u16, @intCast(info.color_depth)), .little);
+    std.mem.writeInt(u32, buffer[30..34], @intFromEnum(info.compression), .little);
+    std.mem.writeInt(u32, buffer[34..38], info.data_size, .little);
+    std.mem.writeInt(u32, buffer[46..50], info.color_ct, .little);
 }
 
-inline fn writeV4HeaderPartToBuffer(buffer: []u8, info: *const BitmapInfo) void {
+fn writeV4HeaderPartToBuffer(buffer: []u8, info: *const BitmapInfo) void {
     writeColorMasksToBuffer(buffer, info);
-    std.mem.writeIntLittle(u32, buffer[70..74], @intFromEnum(info.color_space));
-    var buffer_casted: [*]FxPt2Dot30 = @ptrCast(@alignCast(&buffer[74]));
+    std.mem.writeInt(u32, buffer[70..74], @intFromEnum(info.color_space), .little);
+    var buffer_casted: [*]align(1) FxPt2Dot30 = @ptrCast(@alignCast(&buffer[74]));
     @memcpy(buffer_casted[0..3], info.cs_points.red[0..3]);
     @memcpy(buffer_casted[3..6], info.cs_points.green[0..3]);
     @memcpy(buffer_casted[6..9], info.cs_points.blue[0..3]);
-    std.mem.writeIntLittle(u32, buffer[110..114], info.red_gamma);
-    std.mem.writeIntLittle(u32, buffer[114..118], info.green_gamma);
-    std.mem.writeIntLittle(u32, buffer[118..122], info.blue_gamma);
+    std.mem.writeInt(u32, buffer[110..114], info.red_gamma, .little);
+    std.mem.writeInt(u32, buffer[114..118], info.green_gamma, .little);
+    std.mem.writeInt(u32, buffer[118..122], info.blue_gamma, .little);
 }
 
-inline fn writeColorMasksToBuffer(buffer: []u8, info: *const BitmapInfo) void {
-    std.mem.writeIntLittle(u32, buffer[54..58], info.red_mask);
-    std.mem.writeIntLittle(u32, buffer[58..62], info.green_mask);
-    std.mem.writeIntLittle(u32, buffer[62..66], info.blue_mask);
-    std.mem.writeIntLittle(u32, buffer[66..70], info.alpha_mask);
+fn writeColorMasksToBuffer(buffer: []u8, info: *const BitmapInfo) void {
+    std.mem.writeInt(u32, buffer[54..58], info.red_mask, .little);
+    std.mem.writeInt(u32, buffer[58..62], info.green_mask, .little);
+    std.mem.writeInt(u32, buffer[62..66], info.blue_mask, .little);
+    std.mem.writeInt(u32, buffer[66..70], info.alpha_mask, .little);
 }
 
 noinline fn writeColorTableToBuffer(
@@ -876,7 +882,7 @@ fn transferColorTableImageImpl(
         const row_end = row_start + image.width;
 
         const index_row: []const u8 = pixel_buf[px_row_start .. px_row_start + row_sz];
-        var image_row: []ImagePixelType = image_pixels[row_start..row_end];
+        const image_row: []ImagePixelType = image_pixels[row_start..row_end];
 
         // over each pixel (index to the color table) in the buffer row...
         try transfer.transferColorTableImageRow(IndexIntType, index_row, colors, image_row, row_byte_ct);
@@ -941,8 +947,8 @@ fn transferInlinePixelImageImpl(
         const img_start: usize = @intCast(direction_info.begin + direction_info.increment * @as(i32, @intCast(i)));
         const img_end = img_start + image.width;
 
-        var buffer_row: [*]const u8 = @ptrCast(&pixel_buf[px_start]);
-        var image_row: []ImagePixelType = image_pixels[img_start..img_end];
+        const buffer_row: [*]const u8 = @ptrCast(&pixel_buf[px_start]);
+        const image_row: []ImagePixelType = image_pixels[img_start..img_end];
 
         transfer.transferRowFromBytes(buffer_row, image_row);
 

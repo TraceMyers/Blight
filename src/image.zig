@@ -9,10 +9,10 @@ const bmp = @import("bmp.zig");
 const png = @import("png.zig");
 const tga = @import("tga.zig");
 const jpg = @import("jpg.zig");
-const string = @import("../utils/string.zig");
-const time = @import("../utils/time.zig");
+const string = @import("string.zig");
+const time = @import("time.zig");
 const config = @import("config.zig");
-const filef = @import("../utils/file.zig");
+const filef = @import("file.zig");
 pub const types = @import("types.zig");
 const MergedImageErrors = ImageError || filef.ImageFileError;
 
@@ -47,7 +47,7 @@ pub fn load(
     var image = Image{};
     errdefer image.clear();
 
-    var file_format = if (format == .Infer) try filef.inferImageFormat(&file, file_name) else format;
+    const file_format = if (format == .Infer) try filef.inferImageFormat(&file, file_name) else format;
     if (!options.isInputFormatAllowed(file_format)) {
         return ImageError.InputFormatDisallowed;
     }
@@ -285,7 +285,9 @@ pub fn determineColorMapAndRleSizeCosts(
     can_color_map.* = true;
     var last_was_repeat: bool = false;
     var last_was_new_row: bool = false;
-    // rle encodes 'actions' into the pixels - instructions about what to do next. these are the bytes sizes per format
+
+    // rle encodes 'actions' into the pixels - instructions about what to do next when reading. different formats 
+    // have different action sizes.
     const action_byte_sz = switch (rle_type) {
         .Bmp => 2,
         .Tga => 1,
@@ -294,7 +296,7 @@ pub fn determineColorMapAndRleSizeCosts(
     switch (image.activePixelTag()) {
         inline .RGBA32, .RGB16, .R8, .R16 => |tag| {
             var palette_pixels = try palette.getPixels(tag);
-            var image_pixels = try image.getPixels(tag);
+            const image_pixels = try image.getPixels(tag);
             palette_pixels[0] = image_pixels[0];
             color_ct.* = 1;
 
@@ -327,11 +329,16 @@ pub fn determineColorMapAndRleSizeCosts(
                 }
 
                 // check if the current pixel is already in the table
+                var found_color: bool = false;
                 for (0..color_ct.*) |color| {
                     if (std.meta.eql(pixel, palette_pixels[color])) {
+                        found_color = true;
                         break;
                     }
-                } else continue;
+                } 
+                if (found_color) {
+                    continue;
+                }
 
                 // can't add any more colors to the table = can't make a color map image
                 if (color_ct.* == 256) {
@@ -345,6 +352,7 @@ pub fn determineColorMapAndRleSizeCosts(
         }, else => unreachable,
     }
 
+    // TODO: color maps can have 1 color in the image. just need to only use one of the two colors in the table.
     // color maps require 2-256 colors
     can_color_map.* = can_color_map.* and color_ct.* >= 2;
 }
@@ -472,15 +480,15 @@ test "load bitmap [image]" {
     // 2.7 has coverage over core, v1, v4, and v5
     // 0.9 is V1 only
 
-    const directory_ct = 6;
+    const directory_ct = 3;
     var path_buf = LocalStringBuffer(128).new();
     const test_paths: [directory_ct][]const u8 = .{
-        "d:/projects/zig/core/test/nocommit/bmpsuite-2.7/g/",
-        "d:/projects/zig/core/test/nocommit/bmptestsuite-0.9/valid/",
-        "d:/projects/zig/core/test/nocommit/bmpsuite-2.7/q/",
-        "d:/projects/zig/core/test/nocommit/bmptestsuite-0.9/questionable/",
-        "d:/projects/zig/core/test/nocommit/bmpsuite-2.7/b/",
-        "d:/projects/zig/core/test/nocommit/bmptestsuite-0.9/corrupt/",
+        // "d:/projects/zig/core/test/nocommit/bmpsuite-2.7/g/",
+        "C:/Users/cauti/Projects/Libraries/Blight/images/bmptestsuite-0.9/valid/",
+        // "d:/projects/zig/core/test/nocommit/bmpsuite-2.7/q/",
+        "C:/Users/cauti/Projects/Libraries/Blight/images/bmptestsuite-0.9/questionable/",
+        // "d:/projects/zig/core/test/nocommit/bmpsuite-2.7/b/",
+        "C:/Users/cauti/Projects/Libraries/Blight/images/bmptestsuite-0.9/corrupt/",
     };
 
     var filename_lower = LocalStringBuffer(64).new();
@@ -494,14 +502,18 @@ test "load bitmap [image]" {
     for (0..directory_ct) |i| {
         try path_buf.replace(test_paths[i]);
 
-        var test_dir = try std.fs.openIterableDirAbsolute(path_buf.string(), .{ .access_sub_paths = false });
+        var test_dir = try std.fs.openDirAbsolute(path_buf.string(), .{ .access_sub_paths=false, .iterate=true });
         defer test_dir.close();
 
         var test_it = test_dir.iterate();
 
         while (try test_it.next()) |entry| {
             try filename_lower.replaceLower(entry.name);
-            if (!string.sameTail(filename_lower.string(), "bmp") and !string.sameTail(filename_lower.string(), "dib") and !string.sameTail(filename_lower.string(), "jpg") and !string.same(filename_lower.string(), "nofileextension")) {
+            if (!string.sameTail(filename_lower.string(), "bmp") 
+                and !string.sameTail(filename_lower.string(), "dib") 
+                and !string.sameTail(filename_lower.string(), "jpg") 
+                and !string.same(filename_lower.string(), "nofileextension")
+            ) {
                 continue;
             }
             const t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("loadBmp", 0));
@@ -516,9 +528,9 @@ test "load bitmap [image]" {
 
             if (!image.isEmpty()) {
                 // print("** success {s}\n", .{filename_lower.string()});
-                if (i < 2) {
+                if (i == 0) {
                     valid_supported += 1;
-                } else if (i < 4) {
+                } else if (i == 1) {
                     questionable_supported += 1;
                 } else {
                     corrupt_supported += 1;
@@ -526,9 +538,9 @@ test "load bitmap [image]" {
                 image.clear();
             }
 
-            if (i < 2) {
+            if (i == 0) {
                 valid_total += 1;
-            } else if (i < 4) {
+            } else if (i == 1) {
                 questionable_total += 1;
             } else {
                 corrupt_total += 1;
@@ -548,43 +560,88 @@ test "load bitmap [image]" {
     // try std.testing.expect(valid_supported == valid_total);
 }
 
-// pub fn targaTest() !void {
-test "load targa [image]" {
-    // try memory.autoStartup();
-    // defer memory.shutdown();
-    // const allocator = memory.GameAllocator.allocator();
+test "save bitmap [image]" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    // try memory.autoStartup();
+    // defer memory.shutdown();
+    // const allocator = memory.EnclaveAllocator(memory.Enclave.Game).allocator();
 
-    if (config.run_scope_timers) try time.initScopeTimers(1, allocator);
+    // if (config.run_scope_timers) try time.initScopeTimers(1, allocator);
 
     print("\n", .{});
 
+    // 2.7 has coverage over core, v1, v4, and v5
+    // 0.9 is V1 only
+
     var path_buf = LocalStringBuffer(128).new();
-    try path_buf.append("d:/projects/zig/core/test/nocommit/mytgatestsuite/good/");
-    path_buf.setAnchor();
+    const valid_path: []const u8 = "C:/Users/cauti/Projects/Libraries/Blight/images/bmptestsuite-0.9/valid/";
 
-    var test_dir = try std.fs.openIterableDirAbsolute(path_buf.string(), .{});
-    defer test_dir.close();
+    const valid_filenames: [3][]const u8 = .{
+        "4bpp-323x240.bmp",
+        "1bpp-329x240.bmp",
+        "8bpp-320x240.bmp"
+    };
 
-    var dir_it = test_dir.iterate();
+    var filename = LocalStringBuffer(64).new();
+    
+    try path_buf.replace(valid_path);
 
-    while (try dir_it.next()) |entry| {
-        const t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("loadTga", 0)) else null;
-        defer if (config.run_scope_timers) t.stop();
+    for (0..valid_filenames.len) |i| {
+        try filename.replace(valid_filenames[i]);
 
-        var image = load(path_buf.string(), entry.name, ImageFormat.Infer, allocator, &.{}) catch |e| blk: {
-            print("error {any} loading tga file {s}\n", .{ e, entry.name });
+        var image = load(path_buf.string(), filename.string(), ImageFormat.Bmp, allocator, &.{}) catch |e| blk: {
+            print("valid file {s} {any}\n", .{ filename.string(), e });
             break :blk Image{};
         };
 
-        if (!image.isEmpty()) {
-            // print("loaded tga file {s} successfully\n", .{filename_lower.string()});
+        if (image.isEmpty()) {
+            continue;
         }
 
+        try save("C:/Users/cauti/Projects/Libraries/Blight/images/bmpout/", filename.string(), &image, ImageFormat.Bmp, allocator, &.{});
         image.clear();
-    }
-
-    if (config.run_scope_timers) time.shutdownScopeTimers(true);
+   }
 }
+
+// pub fn targaTest() !void {
+// test "load targa [image]" {
+//     // try memory.autoStartup();
+//     // defer memory.shutdown();
+//     // const allocator = memory.GameAllocator.allocator();
+//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//     defer _ = gpa.deinit();
+//     const allocator = gpa.allocator();
+// 
+//     if (config.run_scope_timers) try time.initScopeTimers(1, allocator);
+// 
+//     print("\n", .{});
+// 
+//     var path_buf = LocalStringBuffer(128).new();
+//     try path_buf.append("d:/projects/zig/core/test/nocommit/mytgatestsuite/good/");
+//     path_buf.setAnchor();
+// 
+//     var test_dir = try std.fs.openDirAbsolute(path_buf.string(), .{});
+//     defer test_dir.close();
+// 
+//     var dir_it = test_dir.iterate();
+// 
+//     while (try dir_it.next()) |entry| {
+//         const t = if (config.run_scope_timers) time.ScopeTimer.start(time.callsiteID("loadTga", 0)) else null;
+//         defer if (config.run_scope_timers) t.stop();
+// 
+//         var image = load(path_buf.string(), entry.name, ImageFormat.Infer, allocator, &.{}) catch |e| blk: {
+//             print("error {any} loading tga file {s}\n", .{ e, entry.name });
+//             break :blk Image{};
+//         };
+// 
+//         if (!image.isEmpty()) {
+//             // print("loaded tga file {s} successfully\n", .{filename_lower.string()});
+//         }
+// 
+//         image.clear();
+//     }
+// 
+//     if (config.run_scope_timers) time.shutdownScopeTimers(true);
+// }

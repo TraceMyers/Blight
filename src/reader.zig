@@ -121,8 +121,8 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
         types.RG64F =>     ComponentTypeSet{ .RType=f32, .GType=f32, .BType=u1,  .AType=u1 },
         types.RGBA128F =>  ComponentTypeSet{ .RType=f32, .GType=f32, .BType=f32, .AType=f32 },
         types.RGBA128 =>   ComponentTypeSet{ .RType=u32, .GType=u32, .BType=u32, .AType=u32 },
-        types.BGR32 =>     ComponentTypeSet{ .RType=u8, .GType=u8, .BType=u8, .AType=u1 },
-        types.BGR24 =>     ComponentTypeSet{ .RType=u8, .GType=u8, .BType=u8, .AType=u1 },
+        types.BGR32 =>     ComponentTypeSet{ .RType=u8,  .GType=u8,  .BType=u8,  .AType=u1 },
+        types.BGR24 =>     ComponentTypeSet{ .RType=u8,  .GType=u8,  .BType=u8,  .AType=u1 },
         else => ComponentTypeSet{},
     };
 
@@ -220,7 +220,8 @@ pub fn BitmapColorTransfer(comptime InPixelTag: types.PixelTag, comptime OutPixe
                     self.transferColor(u24RGBFromBytes(&in_row[row_byte]), &out_row[i]);
                 } else {
                     self.transferColor(
-                        std.mem.readIntSliceLittle(InPixelIntType, in_row[row_byte..row_byte + color_byte_sz]),
+                        // std.mem.readInt(InPixelIntType, in_row[row_byte..row_byte + color_byte_sz], .little),
+                        std.mem.readInt(InPixelIntType, @as(*const [@sizeOf(InPixelType)]u8, @ptrCast(in_row)), .little),
                         &out_row[i]
                     );
                 }
@@ -478,8 +479,10 @@ pub fn TgaRLEReader(
                     | (@as(u24, @intCast(buffer[self.byte_pos+1])) << @as(u4, 8)) 
                     | (buffer[self.byte_pos]);
             } else {
-                self.cur_color = std.mem.readIntSliceLittle(
-                    in_tag.toType(), buffer[self.byte_pos..self.byte_pos+in_tag.size()]
+                self.cur_color = std.mem.readInt(
+                    in_tag.toType(), 
+                    @as(*const [in_tag.size()]u8, @ptrCast(&buffer[self.byte_pos])), 
+                    .little
                 );
             }
             self.byte_pos = new_byte_pos;
@@ -494,7 +497,7 @@ pub fn TgaRLEReader(
                 return ImageError.UnexpectedEndOfImageBuffer;
             }
             const color_table = info.color_map.table.?;
-            const pixel = std.mem.readIntSliceLittle(IntType, buffer[self.byte_pos..new_byte_pos]);
+            const pixel = std.mem.readInt(IntType, @as(*const [ReadInfoType.pixelSz()]u8, @ptrCast(&buffer[self.byte_pos])), .little);
             if (pixel >= color_table.len) {
                 return ImageError.InvalidColorTableIndex;
             }

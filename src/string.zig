@@ -61,7 +61,7 @@ pub fn LocalStringBuffer(comptime sz: comptime_int) type {
             
             var buf_pos: usize = self.len;
             for (0..append_str.len) |i| {
-                var nibbles: [2]u8 = .{ (append_str[i] & 0xf0) >> 4, append_str[i] & 0x0f };
+                const nibbles: [2]u8 = .{ (append_str[i] & 0xf0) >> 4, append_str[i] & 0x0f };
                 inline for (0..2) |j| {
                     if (nibbles[j] <= 9) {
                         self.bytes[buf_pos] = nibbles[j] + to_numchar_diff;
@@ -87,8 +87,8 @@ pub fn LocalStringBuffer(comptime sz: comptime_int) type {
             var i: usize = 20;
             var num = append_num;
             while (i >= 0) : (i -= 1) {
-                var remainder = num % 10;
-                var next_num = num / 10;
+                const remainder = num % 10;
+                const next_num = num / 10;
                 if (next_num > 0) {
                     reverse_buf[i] = @as(u8, @intCast(remainder)) + to_numchar_diff;
                 }
